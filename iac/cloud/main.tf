@@ -75,6 +75,7 @@ resource "cloudflare_zero_trust_device_custom_profile" "lab" {
 
   # Replace the default broad RFC1918 excludes. Never exclude the resource /32s.
   exclude = [
+    { address = local.topology.iot.cidr, description = "IoT gateway local LAN" },
     { address = "${local.topology.office.gateway}/32", description = "Lab office hypervisor management" },
     { address = "${local.topology.home.gateway}/32", description = "Lab home hypervisor management" },
     { address = "169.254.0.0/16", description = "IPv4 link local" },

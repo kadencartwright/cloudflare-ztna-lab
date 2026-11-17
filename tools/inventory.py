@@ -18,7 +18,7 @@ def preflight():
     if state.is_file() and json.loads(state.read_text()).get("resources"):
         return
     routes = json.loads(subprocess.check_output(["ip", "-j", "-4", "route", "show", "table", "all"]))
-    for segment in ("office", "home", "resources"):
+    for segment in ("office", "home", "resources", "iot"):
         requested = ipaddress.ip_network(TOPOLOGY[segment]["cidr"])
         for route in routes:
             destination = route.get("dst", "default")
@@ -26,7 +26,7 @@ def preflight():
                 sys.exit(f"Host route {destination} overlaps lab {segment} {requested}")
     for command, names in (
         ("list", [f"cfztna-{name}" for name in TOPOLOGY["machines"]] + ["cfztna-win-client", "cfztna-win-server"]),
-        ("net-list", ["cfztna-office", "cfztna-home", "cfztna-resources"]),
+        ("net-list", ["cfztna-office", "cfztna-home", "cfztna-resources", "cfztna-iot"]),
         ("pool-list", ["cfztna-lab"]),
     ):
         existing = subprocess.check_output(["virsh", "-c", "qemu:///system", command, "--all", "--name"], text=True)

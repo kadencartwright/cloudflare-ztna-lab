@@ -1,6 +1,7 @@
 { config, lib, pkgs, modulesPath, name, topology, ... }:
 let
   machine = topology.machines.${name};
+  isIoT = name == "iot-gateway";
   isClient = builtins.elem name [ "office" "remote" ];
   isConnector = name == "connector";
   isOrigin = name == "origin";
@@ -19,7 +20,7 @@ in {
   imports = [
     (modulesPath + "/profiles/qemu-guest.nix")
     (modulesPath + "/virtualisation/disk-image.nix")
-  ];
+  ] ++ lib.optional isIoT ./iot-gateway.nix;
   image.efiSupport = false;
   virtualisation.diskSize = 6144;
   system.stateVersion = "26.05";
@@ -41,7 +42,10 @@ in {
         table inet lab {
           chain input {
             type filter hook input priority 0; policy drop;
-            iifname "lo" accept
+            iifname "lo" accept${lib.optionalString isIoT (
+              "\niifname \"iot0\" udp sport 68 udp dport 67 accept"
+              + "\niifname \"iot0\" ip saddr ${topology.iot.cidr} meta l4proto { tcp, udp } th dport 53 accept"
+            )}
             ct state established,related accept
             ${if isOrigin then ''
               ip saddr ${connectorIP} tcp dport { 22, 445, 631 } accept
@@ -50,7 +54,7 @@ in {
             ''}
           }
           chain forward {
-            type filter hook forward priority 0; policy drop;
+            ${if isIoT then "type filter hook forward priority 0; policy accept;" else "type filter hook forward priority 0; policy drop;"}
             ${lib.optionalString isConnector ''
               ct state established,related accept
               iifname "resource0" oifname "uplink0" ip saddr { ${origin}, ${topology.windows_server_ip} } ip daddr ${officeGw} meta l4proto { tcp, udp } th dport 53 accept
@@ -93,7 +97,7 @@ in {
   };
 
   boot.kernel.sysctl = {
-    "net.ipv4.ip_forward" = if isConnector then 1 else 0;
+    "net.ipv4.ip_forward" = if isConnector || isIoT then 1 else 0;
   } // lib.optionalAttrs isOrigin {
     # The CUPS IPP emulator insists on creating an IPv6 listening socket.
     # Only loopback has IPv6; the resource NIC remains IPv4-only.
@@ -220,7 +224,7 @@ in {
   };
 
   services.resolved.enable = true;
-  services.cloudflare-warp = lib.mkIf isClient {
+  services.cloudflare-warp = lib.mkIf (isClient || isIoT) {
     enable = true;
     openFirewall = false;
   };

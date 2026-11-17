@@ -27,6 +27,7 @@ locals {
     office    = local.topology.office
     home      = local.topology.home
     resources = local.topology.resources
+    iot       = local.topology.iot
   }
 }
 
@@ -41,14 +42,14 @@ resource "libvirt_pool" "lab" {
 resource "libvirt_network" "segment" {
   for_each  = local.segments
   name      = "cfztna-${each.key}"
-  mode      = each.key == "resources" ? "none" : "nat"
-  addresses = each.key == "resources" ? [] : [each.value.cidr]
+  mode      = contains(["resources", "iot"], each.key) ? "none" : "nat"
+  addresses = contains(["resources", "iot"], each.key) ? [] : [each.value.cidr]
   autostart = false
   dns {
-    enabled = each.key != "resources"
+    enabled = !contains(["resources", "iot"], each.key)
   }
   dhcp {
-    enabled = each.key != "resources"
+    enabled = !contains(["resources", "iot"], each.key)
   }
   xml {
     xslt = templatefile("${path.module}/dhcp.xsl", {
@@ -103,10 +104,10 @@ resource "libvirt_domain" "guest" {
   }
 
   dynamic "network_interface" {
-    for_each = each.key == "connector" ? [true] : []
+    for_each = each.key == "connector" ? { resources = local.topology.connector_resource_mac } : each.key == "iot-gateway" ? { iot = local.topology.iot_gateway_lan_mac } : {}
     content {
-      network_id = libvirt_network.segment["resources"].id
-      mac        = local.topology.connector_resource_mac
+      network_id = libvirt_network.segment[network_interface.key].id
+      mac        = network_interface.value
     }
   }
 

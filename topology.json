@@ -2,12 +2,15 @@
   "office": {"cidr": "192.168.246.0/24", "gateway": "192.168.246.1"},
   "home": {"cidr": "192.168.247.0/24", "gateway": "192.168.247.1"},
   "resources": {"cidr": "192.168.250.0/24", "gateway": "192.168.250.2"},
+  "iot": {"cidr": "192.168.249.0/24", "gateway": "192.168.249.1"},
   "machines": {
     "office": {"segment": "office", "ip": "192.168.246.10", "mac": "52:54:00:cf:46:10", "ram": 2048},
     "remote": {"segment": "home", "ip": "192.168.247.10", "mac": "52:54:00:cf:47:10", "ram": 2048},
     "connector": {"segment": "office", "ip": "192.168.246.20", "mac": "52:54:00:cf:46:20", "ram": 1024},
-    "origin": {"segment": "resources", "ip": "192.168.250.10", "mac": "52:54:00:cf:50:10", "ram": 1024}
+    "origin": {"segment": "resources", "ip": "192.168.250.10", "mac": "52:54:00:cf:50:10", "ram": 1024},
+    "iot-gateway": {"segment": "office", "ip": "192.168.246.30", "mac": "52:54:00:cf:46:30", "ram": 2048}
   },
+  "iot_gateway_lan_mac": "52:54:00:cf:49:01",
   "connector_resource_mac": "52:54:00:cf:50:02",
   "windows_server_ip": "192.168.250.30",
   "service_ports": {"smb": 445, "ipp": 631}

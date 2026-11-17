@@ -1,4 +1,5 @@
 import ipaddress
+from itertools import combinations
 import json
 from pathlib import Path
 import unittest
@@ -11,14 +12,13 @@ TOPOLOGY = json.loads((ROOT / "topology.json").read_text())
 
 class TopologyTests(unittest.TestCase):
     def test_networks_disjoint(self):
-        office, home, resources = (
-            ipaddress.ip_network(TOPOLOGY[segment]["cidr"])
-            for segment in ("office", "home", "resources")
-        )
-        self.assertFalse(office.overlaps(home))
-        self.assertFalse(office.overlaps(resources))
-        self.assertFalse(home.overlaps(resources))
-        self.assertIn(ipaddress.ip_address(TOPOLOGY["windows_server_ip"]), resources)
+        networks = {
+            segment: ipaddress.ip_network(TOPOLOGY[segment]["cidr"])
+            for segment in ("office", "home", "resources", "iot")
+        }
+        for first, second in combinations(networks.values(), 2):
+            self.assertFalse(first.overlaps(second))
+        self.assertIn(ipaddress.ip_address(TOPOLOGY["windows_server_ip"]), networks["resources"])
 
     def test_static_address_and_dhcp_separation(self):
         machines = TOPOLOGY["machines"]

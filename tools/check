@@ -8,12 +8,12 @@ for root in local cloud; do
   tofu -chdir="iac/$root" validate
 done
 tofu -chdir=iac/cloud test
-shellcheck tools/lab tools/check
+shellcheck tools/lab tools/check tests/iot-local.sh
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q tests tools
 ansible-playbook -i 'origin,' --syntax-check ansible/configure.yml
 ansible-playbook -i 'connector,' --syntax-check ansible/connector.yml
 ansible-playbook -i 'office,remote,' --syntax-check ansible/trust-ca.yml
-for role in connector origin office remote; do
+for role in connector origin office remote iot-gateway; do
   nix --extra-experimental-features 'nix-command flakes' eval --raw ".#nixosConfigurations.$role.config.system.build.image.drvPath" >/dev/null
 done
