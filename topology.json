@@ -1,0 +1,13 @@
+{
+  "office": {"cidr": "192.168.246.0/24", "gateway": "192.168.246.1"},
+  "home": {"cidr": "192.168.247.0/24", "gateway": "192.168.247.1"},
+  "resources": {"cidr": "192.168.250.0/24", "gateway": "192.168.250.2"},
+  "machines": {
+    "office": {"segment": "office", "ip": "192.168.246.10", "mac": "52:54:00:cf:46:10", "ram": 2048},
+    "remote": {"segment": "home", "ip": "192.168.247.10", "mac": "52:54:00:cf:47:10", "ram": 2048},
+    "connector": {"segment": "office", "ip": "192.168.246.20", "mac": "52:54:00:cf:46:20", "ram": 1024},
+    "origin": {"segment": "resources", "ip": "192.168.250.10", "mac": "52:54:00:cf:50:10", "ram": 1024}
+  },
+  "connector_resource_mac": "52:54:00:cf:50:02",
+  "service_ports": {"smb": 445, "ipp": 631}
+}

@@ -1,0 +1,13 @@
+.lab/
+.terraform/
+*.tfstate*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash*.log
+__pycache__/
+.pytest_cache/
+.env*
+*.pem
+*.key
