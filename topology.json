@@ -9,5 +9,6 @@
     "origin": {"segment": "resources", "ip": "192.168.250.10", "mac": "52:54:00:cf:50:10", "ram": 1024}
   },
   "connector_resource_mac": "52:54:00:cf:50:02",
+  "windows_server_ip": "192.168.250.30",
   "service_ports": {"smb": 445, "ipp": 631}
 }

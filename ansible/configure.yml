@@ -1,0 +1,19 @@
+---
+- name: Provision the Samba lab account
+  hosts: origin
+  gather_facts: false
+  become: true
+  vars:
+    smb_password: "{{ lookup('ansible.builtin.file', '../.lab/smb-password') }}"
+  tasks:
+    - name: Set the isolated Samba share password
+      ansible.builtin.command:
+        argv: [smbpasswd, -s, -a, labshare]
+        stdin: "{{ smb_password }}\n{{ smb_password }}"
+      no_log: true
+      changed_when: true
+
+    - name: Verify Samba and the IPP emulator are active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, samba-smbd.service, lab-printer.service]
+      changed_when: false

@@ -1,0 +1,5 @@
+allow_email = "employee@example.org"
+deny_email  = "visitor@example.org"
+
+# Set true only once the isolated Windows file server is configured.
+expose_windows_server = false

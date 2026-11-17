@@ -1,0 +1,27 @@
+---
+- name: Install the dedicated Gateway root for lab CLI probes
+  hosts: office,remote
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Create the lab client configuration directory
+      ansible.builtin.file:
+        path: /etc/cfztna
+        state: directory
+        owner: root
+        mode: "0755"
+
+    - name: Transfer the verified Gateway CA
+      ansible.builtin.copy:
+        src: "{{ lookup('ansible.builtin.env', 'CFZTNA_GATEWAY_CA') }}"
+        dest: /etc/cfztna/gateway-ca.pem
+        owner: root
+        mode: "0644"
+
+    - name: Build the combined trust bundle
+      ansible.builtin.shell: |
+        set -eu
+        umask 022
+        cat /etc/ssl/certs/ca-bundle.crt /etc/cfztna/gateway-ca.pem > /etc/cfztna/cabundle.pem.new
+        mv /etc/cfztna/cabundle.pem.new /etc/cfztna/cabundle.pem
+      changed_when: true

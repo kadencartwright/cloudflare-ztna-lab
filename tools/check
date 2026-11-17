@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export TF_IN_AUTOMATION=1
+tofu fmt -check -recursive iac
+for root in local cloud; do
+  tofu -chdir="iac/$root" init -backend=false -input=false -lockfile=readonly
+  tofu -chdir="iac/$root" validate
+done
+tofu -chdir=iac/cloud test
+shellcheck tools/lab tools/check
+python3 -m unittest discover -s tests -v
+python3 -m compileall -q tests tools
+ansible-playbook -i 'localhost,' --syntax-check ansible/configure.yml
+ansible-playbook -i 'localhost,' --syntax-check ansible/connector.yml
+ansible-playbook -i 'office,remote,' --syntax-check ansible/trust-ca.yml
+for role in connector origin office remote; do
+  nix --extra-experimental-features 'nix-command flakes' eval --raw ".#nixosConfigurations.$role.config.system.build.image.drvPath" >/dev/null
+done

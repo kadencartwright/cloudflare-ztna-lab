@@ -1,0 +1,176 @@
+terraform {
+  required_version = ">= 1.10, < 2"
+  required_providers {
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "5.24.0"
+    }
+  }
+}
+
+variable "account_id" {
+  type = string
+  validation {
+    condition     = can(regex("^[0-9a-f]{32}$", var.account_id))
+    error_message = "Enter the 32-character dedicated lab account ID."
+  }
+}
+
+variable "dedicated_lab_account_confirmation" {
+  type = string
+  validation {
+    condition     = var.dedicated_lab_account_confirmation == "dedicated-lab:${var.account_id}"
+    error_message = "Confirm the dedicated lab account with dedicated-lab:<account_id>."
+  }
+}
+
+variable "allow_email" {
+  type = string
+  validation {
+    condition     = can(regex("^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", var.allow_email))
+    error_message = "Use a lowercase mailbox for the authorized test identity."
+  }
+}
+
+variable "deny_email" {
+  type = string
+  validation {
+    condition     = var.deny_email != var.allow_email && can(regex("^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", var.deny_email))
+    error_message = "Use a distinct lowercase mailbox for the denied test identity."
+  }
+}
+
+variable "expose_windows_server" {
+  type    = bool
+  default = false
+}
+
+locals {
+  topology = jsondecode(file("${path.module}/../../topology.json"))
+  origins = merge(
+    { nixos = { ip = local.topology.machines.origin.ip, ports = "445 631" } },
+    var.expose_windows_server ? { windows = { ip = local.topology.windows_server_ip, ports = "445" } } : {}
+  )
+  lab_identity  = "identity.email in {${jsonencode(var.allow_email)} ${jsonencode(var.deny_email)}}"
+  lab_allow     = "identity.email == ${jsonencode(var.allow_email)}"
+  destinations  = join(" ", [for origin in local.origins : origin.ip])
+  private_ports = join(" or ", [for origin in local.origins : "(net.dst.ip == ${origin.ip} and net.dst.port in {${origin.ports}})"])
+}
+
+resource "cloudflare_zero_trust_device_custom_profile" "lab" {
+  account_id            = var.account_id
+  name                  = "cfztna-lab"
+  match                 = local.lab_identity
+  precedence            = 10
+  enabled               = true
+  service_mode_v2       = { mode = "warp" }
+  tunnel_protocol       = "masque"
+  switch_locked         = true
+  auto_connect          = 30
+  allow_mode_switch     = false
+  allowed_to_leave      = false
+  exclude_office_ips    = false
+  disable_auto_fallback = true
+  captive_portal        = 180
+
+  # Replace the default broad RFC1918 excludes. Never exclude the resource /32s.
+  exclude = [
+    { address = "${local.topology.office.gateway}/32", description = "Lab office hypervisor management" },
+    { address = "${local.topology.home.gateway}/32", description = "Lab home hypervisor management" },
+    { address = "169.254.0.0/16", description = "IPv4 link local" },
+    { address = "224.0.0.0/4", description = "IPv4 multicast" },
+    { address = "255.255.255.255/32", description = "IPv4 broadcast" },
+    { address = "fe80::/10", description = "IPv6 link local" },
+    { address = "ff00::/8", description = "IPv6 multicast" },
+  ]
+}
+
+resource "cloudflare_zero_trust_device_posture_rule" "managed" {
+  for_each = {
+    linux   = "/etc/cfztna-managed"
+    windows = "C:\\ProgramData\\cfztna-managed"
+  }
+  account_id = var.account_id
+  name       = "cfztna-lab marker (${each.key})"
+  type       = "file"
+  schedule   = "1m"
+  expiration = "5m"
+  match      = [{ platform = each.key }]
+  input = {
+    operating_system = each.key
+    path             = each.value
+    exists           = true
+  }
+}
+
+resource "cloudflare_zero_trust_gateway_policy" "private_deny" {
+  account_id = var.account_id
+  name       = "cfztna-lab deny private by default"
+  enabled    = true
+  precedence = 2000
+  action     = "block"
+  filters    = ["l4"]
+  traffic    = "net.dst.ip in {${local.destinations}}"
+}
+
+resource "cloudflare_zero_trust_gateway_policy" "private_allow" {
+  account_id     = var.account_id
+  name           = "cfztna-lab allow managed employee to SMB and IPP"
+  enabled        = true
+  precedence     = 1000
+  action         = "allow"
+  filters        = ["l4"]
+  traffic        = "net.protocol == \"tcp\" and (${local.private_ports})"
+  identity       = local.lab_allow
+  device_posture = "any(device_posture.checks.passed[*] in {${join(" ", [for rule in cloudflare_zero_trust_device_posture_rule.managed : jsonencode(rule.id)])}})"
+  depends_on     = [cloudflare_zero_trust_gateway_policy.private_deny]
+}
+
+resource "cloudflare_zero_trust_gateway_policy" "dns_canary" {
+  account_id = var.account_id
+  name       = "cfztna-lab DNS canary"
+  enabled    = true
+  precedence = 3000
+  action     = "block"
+  filters    = ["dns"]
+  identity   = local.lab_identity
+  traffic    = "dns.fqdn == \"example.net\""
+}
+
+resource "cloudflare_zero_trust_gateway_policy" "https_canary" {
+  account_id = var.account_id
+  name       = "cfztna-lab HTTPS path canary"
+  enabled    = true
+  precedence = 4000
+  action     = "block"
+  filters    = ["http"]
+  identity   = local.lab_identity
+  traffic    = "http.request.host == \"example.com\" and http.request.uri.path == \"/cfztna-lab-block\""
+  rule_settings = {
+    block_page_enabled = true
+    block_reason       = "cfztna-lab HTTPS path canary"
+  }
+}
+
+resource "cloudflare_zero_trust_tunnel_cloudflared" "lab" {
+  account_id = var.account_id
+  name       = "cfztna-lab"
+  config_src = "cloudflare"
+}
+
+resource "cloudflare_zero_trust_tunnel_cloudflared_route" "lab" {
+  for_each   = local.origins
+  account_id = var.account_id
+  network    = "${each.value.ip}/32"
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.lab.id
+  comment    = "cfztna-lab ${each.key} SMB resources"
+  depends_on = [cloudflare_zero_trust_gateway_policy.private_allow]
+}
+
+output "account_id" {
+  value = var.account_id
+}
+
+output "tunnel_id" {
+  value = cloudflare_zero_trust_tunnel_cloudflared.lab.id
+}

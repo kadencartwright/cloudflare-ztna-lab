@@ -1,0 +1,34 @@
+---
+- name: Activate the lab Tunnel connector
+  hosts: connector
+  gather_facts: false
+  become: true
+  vars:
+    tunnel_token: "{{ lookup('ansible.builtin.env', 'CFZTNA_TUNNEL_TOKEN') }}"
+  tasks:
+    - name: Require a remotely managed lab token
+      ansible.builtin.assert:
+        that: tunnel_token | length > 30
+        fail_msg: Set CFZTNA_TUNNEL_TOKEN from the dedicated lab Tunnel secret.
+      no_log: true
+
+    - name: Create the connector secret directory
+      ansible.builtin.file:
+        path: /etc/cfztna
+        state: directory
+        owner: root
+        mode: "0700"
+
+    - name: Transfer the lab Tunnel token
+      ansible.builtin.copy:
+        content: "{{ tunnel_token }}\n"
+        dest: /etc/cfztna/tunnel-token
+        owner: root
+        mode: "0600"
+      no_log: true
+      register: connector_token
+
+    - name: Start or restart the connector
+      ansible.builtin.systemd_service:
+        name: lab-tunnel
+        state: "{{ 'restarted' if connector_token.changed else 'started' }}"

@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+umask 077
+mkdir -p .lab
+export TF_IN_AUTOMATION=1
+nix_cmd=(nix --extra-experimental-features 'nix-command flakes')
+local_tofu=(tofu -chdir=iac/local)
+cloud_tofu=(tofu -chdir=iac/cloud)
+
+init_local() {
+  "${local_tofu[@]}" init -input=false -lockfile=readonly
+}
+
+prepare_local() {
+  if [[ $(uname -m) != x86_64 || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+    echo 'An x86-64 host with readable and writable /dev/kvm is required.' >&2
+    exit 1
+  fi
+  virsh -c qemu:///system list >/dev/null
+  python3 tools/inventory.py preflight
+  if [[ ! -f .lab/id_ed25519 ]]; then
+    ssh-keygen -q -t ed25519 -N '' -f .lab/id_ed25519
+  fi
+  if [[ ! -s .lab/smb-password ]]; then
+    python3 -c 'import secrets; print(secrets.token_urlsafe(24))' > .lab/smb-password
+  fi
+  for role in connector origin office remote; do
+    "${nix_cmd[@]}" build --out-link ".lab/image-$role" ".#nixosConfigurations.$role.config.system.build.image"
+  done
+  python3 tools/inventory.py render
+}
+
+cloud_guard() {
+  local account="${TF_VAR_account_id:-}"
+  if [[ ! $account =~ ^[0-9a-f]{32}$ ||
+        ${TF_VAR_dedicated_lab_account_confirmation:-} != "dedicated-lab:$account" ||
+        -z ${CLOUDFLARE_API_TOKEN:-} ]]; then
+    echo 'Set the dedicated lab account ID, its exact confirmation, and a lab-scoped CLOUDFLARE_API_TOKEN.' >&2
+    exit 1
+  fi
+  if [[ -f .lab/cloud-account ]] && [[ $(<.lab/cloud-account) != "$account" ]]; then
+    echo 'This checkout is already bound to another Cloudflare lab account.' >&2
+    exit 1
+  fi
+  if [[ -s iac/cloud/terraform.tfstate ]]; then
+    local state_account
+    state_account=$(python3 tools/inventory.py state-account)
+    if [[ -n $state_account && $state_account != "$account" ]]; then
+      echo 'Cloudflare state contains a different account.' >&2
+      exit 1
+    fi
+  fi
+  printf '%s\n' "$account" > .lab/cloud-account
+  "${cloud_tofu[@]}" init -input=false -lockfile=readonly
+}
+
+case "${1:-}" in
+  plan|up)
+    prepare_local
+    init_local
+    if [[ $1 = plan ]]; then
+      "${local_tofu[@]}" plan -var-file="$PWD/.lab/local.tfvars.json"
+    else
+      "${local_tofu[@]}" apply -var-file="$PWD/.lab/local.tfvars.json"
+    fi
+    ;;
+  configure)
+    python3 tools/inventory.py wait
+    ansible-playbook -i .lab/inventory.ini ansible/configure.yml
+    ;;
+  ssh)
+    shift
+    exec ssh -F .lab/ssh_config "$@"
+    ;;
+  down)
+    if [[ ! -f iac/local/terraform.tfstate ]]; then
+      echo 'No local state in this checkout.' >&2
+      exit 1
+    fi
+    python3 tools/windows.py check-down
+    init_local
+    "${local_tofu[@]}" destroy -var-file="$PWD/.lab/local.tfvars.json"
+    if [[ -f .lab/known_hosts ]]; then rm .lab/known_hosts; fi
+    ;;
+  cloud-plan|cloud-destroy)
+    cloud_guard
+    if [[ $1 = cloud-plan ]]; then
+      "${cloud_tofu[@]}" plan -var-file=lab.tfvars -out="$PWD/.lab/cloud.tfplan"
+    else
+      "${cloud_tofu[@]}" destroy -var-file=lab.tfvars
+      rm -f .lab/cloud.tfplan
+    fi
+    ;;
+  cloud-apply)
+    cloud_guard
+    "${cloud_tofu[@]}" show -json "$PWD/.lab/cloud.tfplan" | python3 tools/inventory.py check-plan
+    "${cloud_tofu[@]}" apply "$PWD/.lab/cloud.tfplan"
+    ;;
+  connector)
+    test -n "${CFZTNA_TUNNEL_TOKEN:-}" || { echo 'CFZTNA_TUNNEL_TOKEN is required.' >&2; exit 1; }
+    ansible-playbook -i .lab/inventory.ini ansible/connector.yml
+    ;;
+  *)
+    echo 'Usage: tools/lab {plan|up|configure|ssh|down|cloud-plan|cloud-apply|cloud-destroy|connector}' >&2
+    exit 2
+    ;;
+esac
