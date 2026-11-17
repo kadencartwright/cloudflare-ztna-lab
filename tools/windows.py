@@ -20,7 +20,7 @@ def domain_name(role):
     return f"cfztna-win-{role}"
 
 
-def domain_xml(role, iso, network, disk_path):
+def domain_xml(role, iso, network, disk_path, answer_iso=None):
     name = domain_name(role)
     ram, cpus, _ = ROLES[role]
     # The media path is added as an XML attribute so special characters are escaped.
@@ -64,6 +64,13 @@ def domain_xml(role, iso, network, disk_path):
     </domain>""")
     domain.find("devices/disk[@device='cdrom']/source").set("file", str(iso))
     domain.find("devices/disk[@device='disk']/source").set("file", str(disk_path))
+    if answer_iso:
+        devices = domain.find("devices")
+        disk = ET.SubElement(devices, "disk", type="file", device="cdrom")
+        ET.SubElement(disk, "driver", name="qemu", type="raw")
+        ET.SubElement(disk, "source", file=str(answer_iso))
+        ET.SubElement(disk, "target", dev="sdc", bus="sata")
+        ET.SubElement(disk, "readonly")
     return domain
 
 
@@ -83,9 +90,11 @@ def owned_domain(role):
     return domain
 
 
-def up(role, iso, location):
+def up(role, iso, location, image_index=None):
     name = domain_name(role)
     if name in list_domains():
+        if image_index is not None:
+            raise SystemExit('Unattended setup requires a new VM and disk.')
         owned_domain(role)
         virsh("start", name)
         return
@@ -96,11 +105,16 @@ def up(role, iso, location):
         raise SystemExit(f"Cannot read {iso}.")
     network = "server" if role == "server" else location
     virsh("net-info", NETWORKS[network], capture_output=True)
+    answer_iso = None
+    if image_index is not None:
+        from windows_answer import make_media
+
+        answer_iso = make_media(role, image_index, virsh("capabilities", capture_output=True).stdout)
     volume = f"{name}.qcow2"
     virsh("vol-create-as", "--pool", POOL, volume, f"{ROLES[role][2]}G", "--format", "qcow2")
     try:
         disk_path = virsh("vol-path", "--pool", POOL, volume, capture_output=True).stdout.strip()
-        define(domain_xml(role, iso, network, disk_path))
+        define(domain_xml(role, iso, network, disk_path, answer_iso))
     except subprocess.CalledProcessError:
         virsh("vol-delete", "--pool", POOL, volume)
         raise
@@ -147,6 +161,8 @@ if __name__ == "__main__":
     create.add_argument("role", choices=ROLES)
     create.add_argument("iso", nargs="?", type=Path)
     create.add_argument("--location", choices=("office", "home"), default="office")
+    create.add_argument("--image-index", type=int, help="Enable unattended setup using this ISO image index")
+    create.add_argument("--accept-eula", action="store_true", help="Accept the installer license terms for unattended setup")
     relocate = subs.add_parser("move")
     relocate.add_argument("location", choices=("office", "home"))
     delete = subs.add_parser("down")
@@ -154,7 +170,9 @@ if __name__ == "__main__":
     subs.add_parser("check-down")
     args = parser.parse_args()
     if args.command == "up":
-        up(args.role, args.iso, args.location)
+        if args.image_index is not None and (args.image_index < 1 or not args.accept_eula):
+            parser.error("Unattended setup requires a positive --image-index and --accept-eula.")
+        up(args.role, args.iso, args.location, args.image_index)
     elif args.command == "move":
         move(args.location)
     elif args.command == "down":

@@ -20,3 +20,18 @@ Use installation ISOs for which you have a license or download time-limited Micr
 8. Shut down the client and run `just windows-move home`. Repeat the checks with the same MAC, Windows instance and WARP registration. Use `just windows-move office` after shutting down to return. Restart an existing stopped VM with `just windows-up client` or `just windows-up server` without an ISO path. Shut down both guests before running `just windows-down client` and `just windows-down server`.
 
 Use the lab-only firewall and share on the isolated server NIC. This runbook assumes English Windows for the server's built-in administrative ACL names. There is no Windows MDM, Windows fail-closed enforcement, or AD domain. Native printer-driver behavior requires a real guest test.
+
+## Unattended Windows Setup
+
+The launcher generates a private read-only SATA answer ISO when you supply an image index and explicitly accept the installation license. It only enables automatic partitioning on a newly created VM disk. Run `just up` first. Use the exact image index for your copy of the installer. On a read-only mount of the ISO, run `wimlib-imagex info /path/to/mount/sources/install.wim` (or `install.esd`) and check the image name and index.
+
+```sh
+just windows-up client /var/lib/libvirt/images/cfztna-media/Win11.iso --image-index 6 --accept-eula
+just windows-up server /var/lib/libvirt/images/cfztna-media/Server2025.iso --image-index 2 --accept-eula
+```
+
+The client answer file uses Microsoft's published Windows Pro setup key to select the edition. Activate Windows with your own appropriate license. [Microsoft setup and activation guidance](https://learn.microsoft.com/en-us/windows-server/get-started/kms-client-activation-keys)
+
+These indices were identified on the staged English x64 Windows 11 Pro (26300.9457) and Windows Server 2025 Standard Evaluation Desktop Experience (26100.32230) media. Other ISO builds can use different indices. Open the VM console and press a key once if the installer asks to boot from CD/DVD. On subsequent reboots let the prompt expire so Setup continues from the installed disk. The answer file handles the installer settings through OOBE. The launcher reports the path to the generated login in the ignored `.lab/` directory. Cloudflare user enrollment and the server share setup are separate steps.
+
+When Windows reaches sign-in, eject both discs via the VM console or `virsh change-media` (installer drive `sdb`, answer drive `sdc`). Rotate the generated admin password. Delete the per-VM answer ISO and the local credentials file after the rotation. After Setup completes all passes, remove any cached answer file from the guest's `%WINDIR%\Panther` directory. Keep the original install ISOs for future runs.

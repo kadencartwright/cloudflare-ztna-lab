@@ -39,3 +39,23 @@ class TopologyTests(unittest.TestCase):
             self.assertEqual(xml.find("devices/disk[@device='cdrom']/source").get("file"), '/tmp/my iso & docs.iso')
             self.assertEqual(xml.find("devices/tpm/backend").get("version"), "2.0")
             self.assertEqual(xml.find("devices/graphics").get("listen"), "127.0.0.1")
+
+
+class UnattendedTests(unittest.TestCase):
+    def test_answer_media_is_read_only_and_keeps_one_writable_disk(self):
+        xml = domain_xml("client", "/pool/install.iso", "office", "/pool/client.qcow2", "/pool/answer.iso")
+        disks = xml.findall("devices/disk")
+        self.assertEqual(sum(disk.find("readonly") is None for disk in disks), 1)
+        self.assertEqual(disks[-1].find("target").get("dev"), "sdc")
+
+    def test_answer_xml_uses_expected_setup_passes_and_image_index(self):
+        import xml.etree.ElementTree as ET
+
+        from tools.windows_answer import answer_xml
+
+        for role, index, account in (("client", 6, "LocalAccount"), ("server", 2, "AdministratorPassword")):
+            xml = ET.fromstring(answer_xml(role, index, "synthetic-password"))
+            namespace = {"u": "urn:schemas-microsoft-com:unattend"}
+            self.assertEqual([item.get("pass") for item in xml], ["windowsPE", "specialize", "oobeSystem"])
+            self.assertEqual(xml.findtext(".//u:MetaData/u:Value", namespaces=namespace), str(index))
+            self.assertIsNotNone(xml.find(f".//u:{account}", namespaces=namespace))
