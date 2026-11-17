@@ -90,6 +90,12 @@ resource "libvirt_domain" "guest" {
   vcpu      = each.value.ram == 2048 ? 2 : 1
   cloudinit = libvirt_cloudinit_disk.guest[each.key].id
   autostart = false
+  lifecycle {
+    replace_triggered_by = [
+      libvirt_volume.guest[each.key],
+      libvirt_cloudinit_disk.guest[each.key],
+    ]
+  }
 
   network_interface {
     network_id = libvirt_network.segment[each.value.segment].id

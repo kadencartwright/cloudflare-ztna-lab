@@ -92,7 +92,13 @@ in {
     "10-resource" = net topology.connector_resource_mac connectorIP null null;
   };
 
-  boot.kernel.sysctl."net.ipv4.ip_forward" = if isConnector then 1 else 0;
+  boot.kernel.sysctl = {
+    "net.ipv4.ip_forward" = if isConnector then 1 else 0;
+  } // lib.optionalAttrs isOrigin {
+    # The CUPS IPP emulator insists on creating an IPv6 listening socket.
+    # Only loopback has IPv6; the resource NIC remains IPv4-only.
+    "net.ipv6.conf.lo.disable_ipv6" = 0;
+  };
 
   services.openssh = {
     enable = true;
@@ -164,8 +170,9 @@ in {
       StateDirectory = "cfztna-print";
       StateDirectoryMode = "0700";
       AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
-      ExecStart = "${pkgs.cups}/bin/ippeveprinter -r off -p 631 -n ${origin} -d /var/lib/cfztna-print -k -f application/pdf,image/pwg-raster,image/urf LabPrinter";
+      ExecStart = "${pkgs.cups}/bin/ippeveprinter -r off -p 631 -d /var/lib/cfztna-print -k -f application/pdf,image/pwg-raster,image/urf LabPrinter";
       Restart = "on-failure";
+      RestartSec = 1;
     };
   };
 

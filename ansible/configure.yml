@@ -17,3 +17,14 @@
       ansible.builtin.command:
         argv: [systemctl, is-active, samba-smbd.service, lab-printer.service]
       changed_when: false
+
+    - name: Wait for both origin service sockets from the connector
+      ansible.builtin.wait_for:
+        host: "{{ inventory_hostname_ip }}"
+        port: "{{ item }}"
+        timeout: 30
+      vars:
+        inventory_hostname_ip: "{{ (lookup('ansible.builtin.file', '../topology.json') | from_json).machines.origin.ip }}"
+      loop: [445, 631]
+      delegate_to: connector
+      become: false

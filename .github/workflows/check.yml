@@ -13,10 +13,11 @@ jobs:
         with:
           tofu_version: 1.10.6
           tofu_wrapper: false
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
       - name: Install static validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ansible-core nix-bin shellcheck
+          sudo apt-get install -y ansible-core shellcheck
       - name: Validate IaC, NixOS evaluation, scripts and mocked policy plans
         run: ./tools/check
       - name: Parse Windows provisioning and smoke scripts

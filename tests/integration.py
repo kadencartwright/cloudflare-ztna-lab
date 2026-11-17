@@ -174,6 +174,9 @@ def check_route(role, label):
 
 
 def identity(scenario):
+    ssh("connector", "tunnel-ready", "curl --fail --silent --show-error http://127.0.0.1:20241/ready")
+    for port in PORTS:
+        private_socket("connector", port, True, "origin-listener")
     for role in CLIENTS:
         warp_ready(role)
         https(role)

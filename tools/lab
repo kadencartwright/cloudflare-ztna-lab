@@ -86,6 +86,7 @@ case "${1:-}" in
   cloud-plan|cloud-destroy)
     cloud_guard
     if [[ $1 = cloud-plan ]]; then
+      rm -f .lab/cloud.tfplan
       "${cloud_tofu[@]}" plan -var-file=lab.tfvars -out="$PWD/.lab/cloud.tfplan"
     else
       "${cloud_tofu[@]}" destroy -var-file=lab.tfvars

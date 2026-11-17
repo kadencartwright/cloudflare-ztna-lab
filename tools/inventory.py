@@ -14,7 +14,8 @@ TOPOLOGY = json.loads((ROOT / "topology.json").read_text())
 
 
 def preflight():
-    if (ROOT / "iac/local/terraform.tfstate").is_file():
+    state = ROOT / "iac/local/terraform.tfstate"
+    if state.is_file() and json.loads(state.read_text()).get("resources"):
         return
     routes = json.loads(subprocess.check_output(["ip", "-j", "-4", "route", "show", "table", "all"]))
     for segment in ("office", "home", "resources"):
