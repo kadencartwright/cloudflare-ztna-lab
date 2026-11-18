@@ -25,6 +25,25 @@ const (
 
 const resultHelp = "↑/↓ or PgUp/PgDn Scroll   Enter / Esc Back   Q Disconnect"
 
+var banners = map[string]string{
+	"origin": `+------------+
+|[====] o o  |
+|[====] o o  |
+|[====] o o  |
++------------+`,
+	"iot-gateway": `    .----.
+   /      \
+  |        |
++------------+
+|     ()     |
+|     ||     |
++------------+`,
+	"connector": `      .--.
+  .--'    '--.
+ (            ).
+  '------------'`,
+}
+
 var (
 	brandStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
 	titleStyle     = lipgloss.NewStyle().Bold(true)
@@ -39,6 +58,7 @@ type shellResult struct{ err error }
 type model struct {
 	ctx      context.Context
 	title    string
+	banner   string
 	actions  []action
 	selected int
 	screen   screen
@@ -50,12 +70,12 @@ type model struct {
 	shellErr error
 }
 
-func newModel(ctx context.Context, title string, actions []action) model {
+func newModel(ctx context.Context, role string, actions []action) model {
 	progress := spinner.New(spinner.WithSpinner(spinner.Dot))
 	progress.Style = brandStyle
 	output := viewport.New(viewport.WithWidth(76), viewport.WithHeight(14))
 	output.SoftWrap = true
-	return model{ctx: ctx, title: title, actions: actions, width: 80, height: 24, output: output, spinner: progress}
+	return model{ctx: ctx, title: titles[role], banner: banners[role], actions: actions, width: 80, height: 24, output: output, spinner: progress}
 }
 
 func (m model) Init() tea.Cmd { return nil }
@@ -154,6 +174,11 @@ func (m model) View() tea.View {
 		visible := max(1, m.height-6-lipgloss.Height(ansi.Wrap(footer, width, "")))
 		if m.shellErr != nil {
 			visible = max(1, visible-2)
+		}
+		bannerRows := lipgloss.Height(m.banner) + 1
+		if m.banner != "" && lipgloss.Width(m.banner) <= width && visible-bannerRows >= len(m.actions) {
+			rows = append(rows, brandStyle.Render(m.banner), "")
+			visible -= bannerRows
 		}
 		start := max(0, m.selected-visible+1)
 		for index := start; index < min(len(m.actions), start+visible); index++ {

@@ -12,6 +12,15 @@ init_local() {
   "${local_tofu[@]}" init -input=false -lockfile=readonly
 }
 
+prepare_passwords() {
+  local file
+  for file in smb-password office-desktop-password; do
+    if [[ ! -s .lab/$file ]]; then
+      install -m 600 windows/default-password.txt ".lab/$file"
+    fi
+  done
+}
+
 prepare_local() {
   if [[ $(uname -m) != x86_64 || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
     echo 'An x86-64 host with readable and writable /dev/kvm is required.' >&2
@@ -22,9 +31,7 @@ prepare_local() {
   if [[ ! -f .lab/id_ed25519 ]]; then
     ssh-keygen -q -t ed25519 -N '' -f .lab/id_ed25519
   fi
-  if [[ ! -s .lab/smb-password ]]; then
-    python3 -c 'import secrets; print(secrets.token_urlsafe(24))' > .lab/smb-password
-  fi
+  prepare_passwords
   for role in connector origin office remote iot-gateway; do
     "${nix_cmd[@]}" build --out-link ".lab/image-$role" ".#nixosConfigurations.$role.config.system.build.image"
   done
@@ -88,6 +95,7 @@ case "${1:-}" in
     fi
     ;;
   configure)
+    prepare_passwords
     python3 tools/inventory.py wait
     ansible-playbook -i .lab/inventory.ini ansible/configure.yml
     ;;

@@ -34,7 +34,7 @@
   gather_facts: false
   become: true
   vars:
-    desktop_password: "{{ lookup('ansible.builtin.password', '../.lab/office-desktop-password', chars=['ascii_letters', 'digits'], length=24) }}"
+    desktop_password: "{{ lookup('ansible.builtin.file', '../.lab/office-desktop-password') }}"
   tasks:
     - name: Set the local GNOME login password
       ansible.builtin.command:

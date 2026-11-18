@@ -64,7 +64,7 @@ func main() {
 	lab, err := loadTopology(*path)
 	if err == nil {
 		ctx, cancel := context.WithCancel(context.Background())
-		_, err = tea.NewProgram(newModel(ctx, titles[*role], actionsFor(*role, lab)), tea.WithContext(ctx)).Run()
+		_, err = tea.NewProgram(newModel(ctx, *role, actionsFor(*role, lab)), tea.WithContext(ctx)).Run()
 		cancel()
 	}
 	if err != nil {

@@ -3,6 +3,7 @@ from itertools import combinations
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from tools.console import vnc_port
 from tools.windows import domain_xml, NETWORKS
@@ -82,6 +83,14 @@ class TopologyTests(unittest.TestCase):
 
 
 class UnattendedTests(unittest.TestCase):
+    def test_windows_initial_password_defaults_and_can_be_overridden(self):
+        from tools.windows_answer import initial_password
+
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(initial_password(), "changeme")
+        with patch.dict("os.environ", {"CFZTNA_WINDOWS_PASSWORD": "Synthetic-Override9"}):
+            self.assertEqual(initial_password(), "Synthetic-Override9")
+
     def test_answer_media_is_read_only_and_keeps_one_writable_disk(self):
         xml = domain_xml("client", "/pool/install.iso", "office", "/pool/client.qcow2", "/pool/answer.iso")
         disks = xml.findall("devices/disk")

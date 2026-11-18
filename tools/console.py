@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
 import shlex
 import subprocess
 import tempfile
@@ -77,12 +76,12 @@ def prepare():
     password_path = STATE / "password"
     try:
         with password_path.open("x") as stream:
-            stream.write(secrets.token_urlsafe(24) + "\n")
+            stream.write((ROOT / "windows/default-password.txt").read_text())
     except FileExistsError:
         pass
     password = password_path.read_text().strip()
-    if len(password) < 32:
-        raise ValueError(f"The generated password file is incomplete: {password_path}")
+    if not password:
+        raise ValueError(f"The console password file is empty: {password_path}")
     credentials = ET.Element("user-mapping")
     # The built-in Guacamole file provider expects MD5 for its hashed format.
     digest = hashlib.md5(password.encode(), usedforsecurity=False).hexdigest()

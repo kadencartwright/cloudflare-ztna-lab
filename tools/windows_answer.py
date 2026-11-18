@@ -8,7 +8,12 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 MEDIA = Path("/var/lib/libvirt/images/cfztna-media")
-STATE = Path(__file__).resolve().parents[1] / ".lab"
+ROOT = Path(__file__).resolve().parents[1]
+STATE = ROOT / ".lab"
+
+
+def initial_password():
+    return os.environ.get("CFZTNA_WINDOWS_PASSWORD") or (ROOT / "windows/default-password.txt").read_text().strip()
 
 DISK = """
 <DiskConfiguration>
@@ -90,7 +95,7 @@ def make_media(role, image_index, capabilities):
     uid, gid = (int(value) for value in label.split(":"))
     STATE.mkdir(mode=0o700, exist_ok=True)
     os_name = "LabAdmin" if role == "client" else "Administrator"
-    password = secrets.token_hex(16) + "aA9!"
+    password = initial_password()
     tag = secrets.token_hex(6)
     credential = STATE / f"windows-{role}-{tag}.credentials"
     with private_file(credential) as stream:

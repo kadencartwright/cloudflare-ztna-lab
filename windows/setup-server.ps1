@@ -1,6 +1,9 @@
 # Run in an elevated PowerShell session on the isolated Windows Server guest.
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$InterfaceAlias)
+param(
+    [Parameter(Mandatory)][string]$InterfaceAlias,
+    [SecureString]$SharePassword
+)
 $ErrorActionPreference = 'Stop'
 $ip = '192.168.250.30'
 $connector = '192.168.250.2'
@@ -21,8 +24,11 @@ if (-not (Get-NetFirewallRule -Name CFZTNA-SMB -ErrorAction SilentlyContinue)) {
 }
 Set-SmbServerConfiguration -EnableSMB1Protocol $false -RequireSecuritySignature $true -Force
 if (-not (Get-LocalUser -Name $account -ErrorAction SilentlyContinue)) {
-    $password = Read-Host 'Choose a Windows lab-only SMB password' -AsSecureString
-    New-LocalUser -Name $account -Password $password -Description 'CFZTNA disposable share account'
+    if (-not $SharePassword) {
+        $default = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'default-password.txt') -Raw).Trim()
+        $SharePassword = ConvertTo-SecureString $default -AsPlainText -Force
+    }
+    New-LocalUser -Name $account -Password $SharePassword -Description 'CFZTNA disposable share account'
 }
 $principal = "$env:COMPUTERNAME\$account"
 New-Item -Path $path -ItemType Directory -Force | Out-Null

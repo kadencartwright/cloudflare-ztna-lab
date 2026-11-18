@@ -39,6 +39,8 @@ The IoT gateway has one interface on the IoT switch and one on the office uplink
 
 ## Local bring-up
 
+The disposable lab defaults to `changeme` for Guacamole, the GNOME employee login, Samba, and the Windows accounts provisioned by the lab. Set your own local values in `.lab/console/password`, `.lab/office-desktop-password`, and `.lab/smb-password` before running the setup recipes on a shared host. Keep those files private. The [Windows runbook](windows/README.md) covers Windows password overrides.
+
 ```sh
 just check          # real provider schemas, mocked cloud plans, NixOS evaluation and lint
 just plan           # build role images and print the local plan
@@ -58,7 +60,7 @@ Apache Guacamole lists five NixOS SSH terminals and three graphical consoles in 
 
 Each Linux connection opens a Go terminal app built with Bubble Tea, Bubbles, and Lip Gloss. Use the arrow keys and Enter to run an action, or press its number. Scroll command output with the arrow keys or Page Up/Page Down. Press Esc to return to the menu, `S` to open a shell, and `Q` to disconnect. Service restarts require `Y` confirmation. `just ssh` opens a shell directly. [Charm libraries](https://github.com/charmbracelet)
 
-Workstations have WARP and connectivity checks. The connector has Tunnel readiness and origin port checks. The file and print server has service status and retained print jobs. The IoT gateway has routes, DHCP leases, DNS, and firewall counters.
+Workstations have WARP and connectivity checks. The connector's cloud banner marks Tunnel readiness and origin port checks. The Samba server's rack banner marks service status and retained print jobs. The IoT gateway's lock banner marks routes, DHCP leases, DNS, and firewall counters.
 
 On the lab host, install Docker Engine with Compose and give the lab operator access to Docker and system libvirt. The operator also needs an active systemd user manager. After `just up` and `just configure`, run `just console-up`. The launcher uses the lab's SSH host keys, collecting one through the normal lab SSH setup for any Linux guest first seen during console setup. Start the Windows VMs with `just windows-up` to use their consoles.
 
@@ -70,17 +72,17 @@ From your own machine, forward the web port over SSH, then open `http://127.0.0.
 ssh -N -L 127.0.0.1:8788:127.0.0.1:8788 lab-operator@lab-host
 ```
 
-Sign in as `lab-console` with the generated password in `.lab/console/password` on the host. Use the guest's existing Windows credentials at its sign-in screen. Guacamole and its relays bind to loopback. Keep the management page behind the SSH forward and restrict the console login to trusted lab operators. The ignored `.lab/console/` directory contains credentials and a private Guacamole mapping. The GUI needs no Cloudflare changes.
+Sign in as `lab-console` with the password in `.lab/console/password` on the host. Use the guest's Windows credentials at its sign-in screen. Guacamole and its relays bind to loopback. Keep the management page behind the SSH forward and restrict the console login to trusted lab operators. The ignored `.lab/console/` directory contains credentials and a private Guacamole mapping. The GUI needs no Cloudflare changes.
 
-Run `just console-down` to remove the console containers and stop the relay. Keep the generated password for future starts. If the relay stops when the operator signs out of the host, keep the host login open or configure systemd user lingering for that operator.
+Run `just console-down` to remove the console containers and stop the relay. The password file is reused on future starts. If the relay stops when the operator signs out of the host, keep the host login open or configure systemd user lingering for that operator.
 
 ### Office desktop
 
-Open **Office desktop (VNC)** and select **Lab Employee** at the GNOME login screen. The local username is `employee` and `just configure` stores its generated password in `.lab/office-desktop-password` on the host. The employee account has no administrative rights. Use **office (SSH)** for the network diagnostics menu.
+Open **Office desktop (VNC)** and select **Lab Employee** at the GNOME login screen. The local username is `employee` and `just configure` uses the password in `.lab/office-desktop-password` on the host. The employee account has no administrative rights. Use **office (SSH)** for the network diagnostics menu.
 
 The office login screen and desktop ignore Caps Lock events from the console. Use Shift for uppercase when typing the password.
 
-The desktop includes Firefox, LibreOffice Writer, Calc and Impress, GNOME Files and PDF tools, and CUPS printing. Firefox uses the verified Gateway CA installed by `just trust-ca`. On an enrolled office workstation, open `smb://192.168.250.10/Work` in Files and authenticate as `labshare` with the generated SMB password. To add the virtual printer by its IPP URL, run this from the lab host with WARP connected.
+The desktop includes Firefox, LibreOffice Writer, Calc and Impress, GNOME Files and PDF tools, and CUPS printing. Firefox uses the verified Gateway CA installed by `just trust-ca`. On an enrolled office workstation, open `smb://192.168.250.10/Work` in Files and authenticate as `labshare` with the password in `.lab/smb-password`. To add the virtual printer by its IPP URL, run this from the lab host with WARP connected.
 
 ```sh
 just ssh office 'sudo -n lpadmin -p LabPrinter -E -v ipp://192.168.250.10:631/ipp/print -m everywhere'
