@@ -14,11 +14,11 @@ flowchart LR
   E --> W[Public DNS and HTTPS]
   C["Cloudflare Tunnel Connector (NixOS)"] -->|Outbound cloudflared connection| ON
   C -->|Second NIC| V[Isolated resource segment]
-  V --> L[NixOS Samba and IPP]
-  V --> S[Windows Server SMB]
+  V --> L["NixOS Samba and IPP<br/>Private origin behind the Tunnel"]
+  V --> S["Windows Server SMB<br/>Private origin behind the Tunnel"]
 ```
 
-The workstations and IoT gateway encrypt traffic on-device before it reaches NAT. The office NAT also carries the connector's separate outbound `cloudflared` connection. Cloudflare Gateway evaluates employee requests, and authorized private SMB and IPP traffic reaches the resource segment through that connector. [Cloudflare connectivity options](https://developers.cloudflare.com/cloudflare-one/networks/connectivity-options/)
+The workstations and IoT gateway run WARP and encrypt traffic before it reaches NAT. The office NAT also carries the connector's separate outbound `cloudflared` connection. Cloudflare Gateway evaluates employee requests. The connector delivers authorized SMB and IPP traffic to the NixOS and Windows file servers over the isolated resource LAN. WARP enrollment belongs to the workstations and IoT gateway. [Cloudflare connectivity options](https://developers.cloudflare.com/cloudflare-one/networks/connectivity-options/)
 
 | Segment | Addresses | Function |
 | --- | --- | --- |
