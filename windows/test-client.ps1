@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('allow','deny','pre-warp')][string]$Expected,
-    [switch]$WindowsServer
+    [switch]$WindowsServer,
+    [PSCredential]$Credential
 )
 $ErrorActionPreference = 'Stop'
 Start-Transcript -Path (Join-Path $env:TEMP ("cfztna-" + (Get-Date -Format yyyyMMdd-HHmmss) + ".txt"))
@@ -11,33 +12,48 @@ try {
     $share = if ($WindowsServer) { 'WinWork' } else { 'Work' }
     Get-NetIPConfiguration | Format-Table InterfaceAlias,IPv4Address,IPv4DefaultGateway
     if ($Expected -ne 'pre-warp') {
-        & curl.exe --noproxy '*' --max-time 15 -fsS https://example.com/ | Out-Null
+        # Gateway's lab certificate chain may have no Schannel revocation endpoint.
+        # Keep peer trust and hostname checks, and act on any known revocation.
+        $https = @('--noproxy', '*', '--ssl-revoke-best-effort', '--max-time', '15')
+        & curl.exe @https -fsS https://example.com/ | Out-Null
         if ($LASTEXITCODE) { throw 'Control request failed TLS verification or HTTP.' }
-        $blockHeaders = & curl.exe --noproxy '*' --http1.1 --max-time 15 -sS -o NUL -D - https://example.com/cfztna-lab-block
+        $blockHeaders = & curl.exe @https --http1.1 -sS -o NUL -D - https://example.com/cfztna-lab-block
         if ($LASTEXITCODE) { throw 'HTTPS canary request failed.' }
         $blocked = ($blockHeaders | Select-String '^HTTP/1\.1 (\d{3})\b').Matches.Groups[1].Value
-        $gatewayRedirect = $blockHeaders -match '^Location: https://blocked\.teams\.cloudflare\.com/\?[^\r\n]*[?&]block_reason=cfztna-lab\+HTTPS\+path\+canary(?:&|$)'
+        $gatewayRedirect = $blockHeaders -match '^Location: https://blocked\.teams\.cloudflare\.com/\?(?:[^\r\n]*&)?block_reason=cfztna-lab\+HTTPS\+path\+canary(?:&|$)'
         if ($blocked -ne '403' -and ($blocked -ne '302' -or -not $gatewayRedirect)) {
             throw "Expected the Gateway block response for the encrypted canary path, got $blocked"
         }
         Write-Output "HTTPS canary status $blocked with trusted TLS"
     }
-    Find-NetRoute -RemoteIPAddress $ip | Format-Table
+    $routes = Find-NetRoute -RemoteIPAddress $ip
+    $routes | Format-Table InterfaceAlias,DestinationPrefix,NextHop
+    if ($Expected -ne 'pre-warp' -and -not ($routes | Where-Object InterfaceAlias -eq CloudflareWARP)) {
+        throw 'The private route did not select the Cloudflare WARP interface.'
+    }
     $reachable = Test-NetConnection $ip -Port 445 -InformationLevel Quiet -WarningAction SilentlyContinue
     if ($reachable -ne ($Expected -eq 'allow')) { throw "Unexpected SMB reachability: $reachable" }
     if ($Expected -eq 'allow') {
-        $credential = Get-Credential -Message 'Enter the Samba or Windows Server share logon'
-        $drive = New-PSDrive -Name ZTLab -PSProvider FileSystem -Root "\\$ip\$share" -Credential $credential
+        if (-not $Credential) {
+            $Credential = Get-Credential -Message 'Enter the Samba or Windows Server share logon'
+        }
+        $root = "\\$ip\$share"
+        $drive = New-PSDrive -Name ZTLab -PSProvider FileSystem -Root $root -Credential $Credential
         $nonce = [Guid]::NewGuid().ToString()
-        $file = Join-Path "$($drive.Name):\" "$nonce.txt"
+        $file = "$root\$nonce.txt"
         try {
-            Set-Content -Path $file -Value $nonce
-            if ((Get-Content $file -Raw).Trim() -ne $nonce) { throw 'SMB read/write contents differ.' }
-            Get-SmbConnection | Where-Object ShareName -eq $share | Format-Table ServerName,ShareName,Dialect,Encrypted
+            [IO.File]::WriteAllText($file, $nonce)
+            if ([IO.File]::ReadAllText($file) -ne $nonce) { throw 'SMB read/write contents differ.' }
+            $connections = Get-SmbConnection | Where-Object { $_.ServerName -eq $ip -and $_.ShareName -eq $share }
+            $connections | Format-Table ServerName,ShareName,Dialect,Encrypted
+            if (-not ($connections | Where-Object Encrypted)) { throw 'No encrypted SMB connection found for the share.' }
             Write-Output "SMB read/write verified for $share"
         } finally {
-            Remove-Item $file -ErrorAction SilentlyContinue
-            Remove-PSDrive $drive.Name
+            try {
+                if ([IO.File]::Exists($file)) { [IO.File]::Delete($file) }
+            } finally {
+                Remove-PSDrive $drive.Name
+            }
         }
     }
     if (-not $WindowsServer) {

@@ -13,7 +13,8 @@ if ($team -cnotmatch '^[a-z0-9][a-z0-9-]*$' -or
 
 $msi = (Resolve-Path -LiteralPath $MsiPath).Path
 $signature = Get-AuthenticodeSignature -LiteralPath $msi
-if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?i)(^|,\s*)O=Cloudflare') {
+$publisher = '(?i)(?:^|,\s*)O=(?:Cloudflare|"Cloudflare, Inc\."|Cloudflare\\, Inc\.)(?=,|$)'
+if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch $publisher) {
     throw 'Provide a valid Cloudflare-signed MSI.'
 }
 
