@@ -11,6 +11,11 @@ relay=cfztna-console-relay.service
 case "${1:-}" in
   up)
     "${compose[@]}" config --quiet
+    if [[ ! -f .lab/inventory.ini ]]; then
+      echo 'Run just up and just configure before starting the console.' >&2
+      exit 1
+    fi
+    ansible-playbook -i .lab/inventory.ini ansible/console-menu.yml
     python3 -m tools.console prepare
     if ! systemctl --user is-active --quiet "$relay"; then
       systemd-run --user --collect --unit="$relay" --property=Restart=on-failure --property=RestartSec=2s \

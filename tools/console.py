@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -51,6 +52,16 @@ def add_connection(user, name, protocol, **parameters):
         ET.SubElement(connection, "param", name=key.replace("_", "-")).text = str(value)
 
 
+def menu_command(role):
+    menu = "/etc/cfztna-console/lab_menu.py"
+    launch = shlex.join(["/run/current-system/sw/bin/python3", "-u", menu, role])
+    return (
+        f"if [ -r {menu} ]; then exec {launch}; fi; "
+        "printf '%s\\n' 'Menu unavailable. Run just console-up on the lab host while this guest is reachable.'; "
+        "exec /run/current-system/sw/bin/bash -l"
+    )
+
+
 def prepare():
     key_path = LAB / "id_ed25519"
     if not key_path.is_file() or not (LAB / "ssh_config").is_file():
@@ -78,7 +89,8 @@ def prepare():
         port = ORIGIN_RELAY if role == "origin" else 22
         known_host = f"[{host}]:{port}" if port != 22 else host
         add_connection(user, f"{role} (SSH)", "ssh", hostname=host, port=port, username="lab",
-                       private_key=private_key, host_key=f"{known_host} {key_for(role, address)}")
+                       private_key=private_key, host_key=f"{known_host} {key_for(role, address)}",
+                       command=menu_command(role))
     for role, port in WINDOWS_RELAYS.items():
         add_connection(user, f"Windows {role} (VNC)", "vnc", hostname=LOOPBACK, port=port)
 

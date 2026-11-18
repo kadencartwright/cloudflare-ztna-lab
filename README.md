@@ -56,7 +56,11 @@ For a handoff to a new host and account, start from a fresh clone. The bring-up 
 
 Apache Guacamole puts the five headless NixOS SSH terminals and both Windows graphical consoles in one browser tab. The Windows connections use the existing libvirt VNC consoles and follow the active ports after a VM restarts or moves. The origin's SSH connection reaches the resource network through the connector. [Guacamole architecture](https://guacamole.apache.org/doc/gug/guacamole-architecture.html)
 
+Each Linux connection opens a numbered menu for that guest. Workstations have WARP and connectivity checks. The connector has Tunnel readiness and origin port checks. The file and print server has service status and retained print jobs. The IoT gateway has routes, DHCP leases, DNS, and firewall counters. Service restarts ask for confirmation. Press `S` and Enter for a shell, then type `exit` to return. `just ssh` opens a shell directly.
+
 On the lab host, install Docker Engine with Compose and give the lab operator access to Docker and system libvirt. The operator also needs an active systemd user manager. After `just up` and `just configure`, run `just console-up`. The launcher uses the lab's SSH host keys, collecting one through the normal lab SSH setup for any Linux guest first seen during console setup. Start the Windows VMs with `just windows-up` to use their consoles.
+
+Rerun `just console-up` to install or refresh the menus, then reconnect any open Linux console tabs. The launcher installs menus on the Linux guests it can reach. Bring a guest online and rerun the command to catch it up.
 
 From your own machine, forward the web port over SSH, then open `http://127.0.0.1:8788/guacamole/` in a browser.
 

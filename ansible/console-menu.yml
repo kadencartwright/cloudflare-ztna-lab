@@ -1,0 +1,25 @@
+---
+- name: Install the browser console menu on Linux lab guests
+  hosts: office,remote,connector,origin,iot-gateway
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+  tasks:
+    - name: Create the menu directory
+      ansible.builtin.file:
+        path: /etc/cfztna-console
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the menu and lab topology
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /etc/cfztna-console/
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - ../console/lab_menu.py
+        - ../topology.json

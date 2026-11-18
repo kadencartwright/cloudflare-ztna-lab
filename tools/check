@@ -10,8 +10,9 @@ done
 tofu -chdir=iac/cloud test
 shellcheck tools/lab tools/check tools/console-control console/tomcat-loopback.sh tests/iot-local.sh
 python3 -m unittest discover -s tests -v
-python3 -m compileall -q tests tools
+python3 -m compileall -q tests tools console
 ansible-playbook -i 'origin,' --syntax-check ansible/configure.yml
+ansible-playbook -i 'office,remote,connector,origin,iot-gateway,' --syntax-check ansible/console-menu.yml
 ansible-playbook -i 'connector,' --syntax-check ansible/connector.yml
 ansible-playbook -i 'office,remote,' --syntax-check ansible/trust-ca.yml
 ansible-playbook -i 'office,remote,iot-gateway,' --syntax-check ansible/enroll-warp.yml
