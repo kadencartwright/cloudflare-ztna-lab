@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import unittest
 
+from tools.console import windows_port
 from tools.windows import domain_xml, NETWORKS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,24 @@ class TopologyTests(unittest.TestCase):
             self.assertEqual(xml.find("devices/disk[@device='cdrom']/source").get("file"), '/tmp/my iso & docs.iso')
             self.assertEqual(xml.find("devices/tpm/backend").get("version"), "2.0")
             self.assertEqual(xml.find("devices/graphics").get("listen"), "127.0.0.1")
+
+    def test_console_relays_only_active_loopback_lab_vnc(self):
+        import xml.etree.ElementTree as ET
+
+        domain = domain_xml("client", "/media.iso", "office", "/disk.qcow2")
+        graphics = domain.find("devices/graphics")
+        graphics.set("port", "5907")
+        with self.assertRaises(ValueError):
+            windows_port(ET.tostring(domain))
+        domain.set("id", "1")
+        self.assertEqual(windows_port(ET.tostring(domain)), 5907)
+        graphics.set("listen", "0.0.0.0")
+        with self.assertRaises(ValueError):
+            windows_port(ET.tostring(domain))
+        graphics.set("listen", "127.0.0.1")
+        domain.remove(domain.find("metadata"))
+        with self.assertRaises(ValueError):
+            windows_port(ET.tostring(domain))
 
 
 class UnattendedTests(unittest.TestCase):

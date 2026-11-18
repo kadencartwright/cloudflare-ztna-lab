@@ -53,3 +53,9 @@ trust-ca pem-file:
 
 enroll-warp host:
     ansible-playbook -i .lab/inventory.ini ansible/enroll-warp.yml --limit "$1"
+
+console-up:
+    bash tools/console-control up
+
+console-down:
+    bash tools/console-control down

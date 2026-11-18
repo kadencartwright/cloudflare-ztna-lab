@@ -52,6 +52,22 @@ For a handoff to a new host and account, start from a fresh clone. The bring-up 
 
 [Local OpenTofu](iac/local/main.tf) manages libvirt. Cloud-init injects the SSH key created in `.lab/`. The inventory and SSH config are generated from [the address plan](topology.json), with an isolated trust-on-first-use host key file and ProxyJump to the origin. Compare initial fingerprints via the trusted console on a shared host. Ansible sets the disposable SMB account `labshare` from `.lab/smb-password`. This is separate from enrollment identity. Changing a role image or cloud-init seed replaces that VM. Keep any data you need outside the disposable guest disk. Tests write command results, network routes, transfer hashes and IPP job IDs under `.lab/proof/`. Treat logs and state as private.
 
+## Browser consoles
+
+Apache Guacamole puts the five headless NixOS SSH terminals and both Windows graphical consoles in one browser tab. The Windows connections use the existing libvirt VNC consoles and follow the active ports after a VM restarts or moves. The origin's SSH connection reaches the resource network through the connector. [Guacamole architecture](https://guacamole.apache.org/doc/gug/guacamole-architecture.html)
+
+On the lab host, install Docker Engine with Compose and give the lab operator access to Docker and system libvirt. The operator also needs an active systemd user manager. After `just up` and `just configure`, run `just console-up`. The launcher uses the lab's SSH host keys, collecting one through the normal lab SSH setup for any Linux guest first seen during console setup. Start the Windows VMs with `just windows-up` to use their consoles.
+
+From your own machine, forward the web port over SSH, then open `http://127.0.0.1:8788/guacamole/` in a browser.
+
+```sh
+ssh -N -L 127.0.0.1:8788:127.0.0.1:8788 lab-operator@lab-host
+```
+
+Sign in as `lab-console` with the generated password in `.lab/console/password` on the host. Use the guest's existing Windows credentials at its sign-in screen. Guacamole and its relays bind to loopback. Keep the management page behind the SSH forward and restrict the console login to trusted lab operators. The ignored `.lab/console/` directory contains credentials and a private Guacamole mapping. The GUI needs no Cloudflare changes.
+
+Run `just console-down` to remove the console containers and stop the relay. Keep the generated password for future starts. If the relay stops when the operator signs out of the host, keep the host login open or configure systemd user lingering for that operator.
+
 ## Dedicated Cloudflare setup
 
 1. Create a new dedicated Cloudflare Zero Trust account and team. Create one Cloudflare Access service token per WARP endpoint: office, remote, Windows 11 and IoT gateway. Add those tokens to the device enrollment policy with the Service Auth action. Keep the client IDs and secrets in an external secret store. [Service Auth enrollment](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/device-enrollment/) In **Traffic policies > Traffic settings**, enable Secure Web Gateway TCP and UDP proxying, TLS decryption and activity logging. Record the prior settings and download the active Gateway root. These account-wide controls are manual so the IaC does not own or overwrite an account-wide settings resource.

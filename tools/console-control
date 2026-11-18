@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+export CFZTNA_CONSOLE_UID CFZTNA_CONSOLE_GID
+CFZTNA_CONSOLE_UID=$(id -u)
+CFZTNA_CONSOLE_GID=$(id -g)
+compose=(docker compose --project-name cfztna-console --file console/compose.yml)
+relay=cfztna-console-relay.service
+
+case "${1:-}" in
+  up)
+    "${compose[@]}" config --quiet
+    python3 -m tools.console prepare
+    if ! systemctl --user is-active --quiet "$relay"; then
+      systemd-run --user --collect --unit="$relay" --property=Restart=on-failure --property=RestartSec=2s \
+        --working-directory="$PWD" --setenv="PATH=$PATH" \
+        "$(command -v python3)" -m tools.console relay
+    fi
+    "${compose[@]}" up -d --wait --wait-timeout 90
+    systemctl --user is-active --quiet "$relay"
+    printf '%s\n' 'Guacamole is available at http://127.0.0.1:8788/guacamole/' \
+      'Sign in as lab-console using the password in .lab/console/password.'
+    ;;
+  down)
+    "${compose[@]}" down
+    if [[ $(systemctl --user show --property=LoadState --value "$relay") == loaded ]]; then
+      systemctl --user stop "$relay"
+    fi
+    ;;
+  *)
+    echo 'Usage: tools/console-control {up|down}' >&2
+    exit 2
+    ;;
+esac
