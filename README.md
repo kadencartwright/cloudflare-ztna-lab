@@ -12,7 +12,7 @@ flowchart LR
   ON -->|WARP| E[Cloudflare Gateway and Tunnel edge]
   HN -->|WARP| E
   E --> W[Public DNS and HTTPS]
-  C[NixOS connector] -->|Outbound Tunnel for private SMB and IPP| E
+  C["Cloudflare Tunnel Connector (NixOS)"] -->|Outbound Cloudflare Tunnel for private SMB and IPP| E
   C --- ON
   C -->|Second NIC| V[Isolated resource segment]
   V --> L[NixOS Samba and IPP]
