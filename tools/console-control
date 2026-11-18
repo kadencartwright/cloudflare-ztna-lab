@@ -15,7 +15,11 @@ case "${1:-}" in
       echo 'Run just up and just configure before starting the console.' >&2
       exit 1
     fi
-    ansible-playbook -i .lab/inventory.ini ansible/console-menu.yml
+    install -d -m 700 .lab/console
+    menu_package="$PWD/.lab/console/menu-package"
+    nix --extra-experimental-features 'nix-command flakes' build .#cfztna-console --out-link "$menu_package"
+    CFZTNA_CONSOLE_BINARY="$menu_package/bin/cfztna-console" \
+      ansible-playbook -i .lab/inventory.ini ansible/console-menu.yml
     python3 -m tools.console prepare
     if ! systemctl --user is-active --quiet "$relay"; then
       systemd-run --user --collect --unit="$relay" --property=Restart=on-failure --property=RestartSec=2s \

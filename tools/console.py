@@ -53,10 +53,13 @@ def add_connection(user, name, protocol, **parameters):
 
 
 def menu_command(role):
-    menu = "/etc/cfztna-console/lab_menu.py"
-    launch = shlex.join(["/run/current-system/sw/bin/python3", "-u", menu, role])
+    menu = "/etc/cfztna-console/cfztna-console"
+    legacy = "/etc/cfztna-console/lab_menu.py"
+    launch = shlex.join([menu, "--role", role])
+    legacy_launch = shlex.join(["/run/current-system/sw/bin/python3", "-u", legacy, role])
     return (
-        f"if [ -r {menu} ]; then exec {launch}; fi; "
+        f"if [ -x {menu} ]; then exec {launch}; fi; "
+        f"if [ -r {legacy} ]; then exec {legacy_launch}; fi; "
         "printf '%s\\n' 'Menu unavailable. Run just console-up on the lab host while this guest is reachable.'; "
         "exec /run/current-system/sw/bin/bash -l"
     )

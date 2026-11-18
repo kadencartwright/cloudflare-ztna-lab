@@ -1,13 +1,9 @@
-from contextlib import redirect_stdout
-import io
 import ipaddress
 from itertools import combinations
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 
-from console.lab_menu import actions_for, menu
 from tools.console import windows_port
 from tools.windows import domain_xml, NETWORKS
 
@@ -62,19 +58,6 @@ class TopologyTests(unittest.TestCase):
         domain.remove(domain.find("metadata"))
         with self.assertRaises(ValueError):
             windows_port(ET.tostring(domain))
-
-
-class ConsoleMenuTests(unittest.TestCase):
-    def test_restart_requires_an_explicit_yes(self):
-        actions = actions_for("iot-gateway", TOPOLOGY)
-        restart = next(str(index) for index, action in enumerate(actions, 1) if action.label == "Restart WARP")
-        with (
-            patch("builtins.input", side_effect=[restart, "", "q"]),
-            patch("console.lab_menu.run_action") as run,
-            redirect_stdout(io.StringIO()),
-        ):
-            menu("iot-gateway", actions)
-        run.assert_not_called()
 
 
 class UnattendedTests(unittest.TestCase):

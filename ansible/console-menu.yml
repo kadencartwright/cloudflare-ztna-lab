@@ -13,13 +13,23 @@
         group: root
         mode: "0755"
 
-    - name: Install the menu and lab topology
+    - name: Install the lab topology
       ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: /etc/cfztna-console/
+        src: ../topology.json
+        dest: /etc/cfztna-console/topology.json
         owner: root
         group: root
         mode: "0644"
-      loop:
-        - ../console/lab_menu.py
-        - ../topology.json
+
+    - name: Install the Nix-built console binary
+      ansible.builtin.copy:
+        src: "{{ lookup('ansible.builtin.env', 'CFZTNA_CONSOLE_BINARY') }}"
+        dest: /etc/cfztna-console/cfztna-console
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Remove the superseded Python menu
+      ansible.builtin.file:
+        path: /etc/cfztna-console/lab_menu.py
+        state: absent
