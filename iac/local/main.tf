@@ -88,7 +88,7 @@ resource "libvirt_domain" "guest" {
   for_each  = local.machines
   name      = "cfztna-${each.key}"
   memory    = each.value.ram
-  vcpu      = each.value.ram == 2048 ? 2 : 1
+  vcpu      = try(each.value.vcpus, each.value.ram == 2048 ? 2 : 1)
   cloudinit = libvirt_cloudinit_disk.guest[each.key].id
   autostart = false
   lifecycle {
@@ -114,6 +114,23 @@ resource "libvirt_domain" "guest" {
   # A file-backed disk lets libvirt manage DAC labels on Ubuntu hosts.
   disk {
     file = libvirt_volume.guest[each.key].id
+  }
+
+  dynamic "graphics" {
+    for_each = each.key == "office" ? [1] : []
+    content {
+      type           = "vnc"
+      listen_type    = "address"
+      listen_address = "127.0.0.1"
+      autoport       = true
+    }
+  }
+
+  dynamic "video" {
+    for_each = each.key == "office" ? [1] : []
+    content {
+      type = "virtio"
+    }
   }
 
   xml {

@@ -1,10 +1,10 @@
 # Cloudflare Zero Trust SMB lab
 
-A disposable, single-host KVM lab for a 50-person hybrid organization. Employee devices use Cloudflare One Client for public HTTPS inspection and private SMB and IPP from office and home. NixOS provides two workstations, a Tunnel connector, a Samba share, a CUPS IPP Everywhere test printer, and a gateway that gives clientless IoT devices inspected Internet access. The lab also supports a movable Windows 11 client and a Windows Server 2025 file server.
+A disposable, single-host KVM lab for a 50-person hybrid organization. Employee devices use Cloudflare One Client for public HTTPS inspection and private SMB and IPP from office and home. NixOS provides a GNOME office workstation, a headless remote workstation, a Tunnel connector, a Samba share, a CUPS IPP Everywhere test printer, and a gateway that gives clientless IoT devices inspected Internet access. The lab also supports a movable Windows 11 client and a Windows Server 2025 file server.
 
 ```mermaid
 flowchart LR
-  O[NixOS office or Windows 11] --> ON[Office employee NAT]
+  O[GNOME office or Windows 11] --> ON[Office employee NAT]
   R[NixOS home or Windows 11] --> HN[Home NAT]
   I[IoT devices] --> IL[Isolated IoT LAN]
   IL -->|Public IPv4 and DNS only| IG[NixOS IoT gateway running WARP]
@@ -33,7 +33,7 @@ The IoT gateway has one interface on the IoT switch and one on the office uplink
 
 ## Host setup
 
-- Use x86-64 Linux with hardware KVM, system libvirt, QEMU, and dnsmasq. Expose nested virtualization on a VM host. Reserve 8 GiB RAM and approximately 35 GiB disk for the NixOS slice, including build cache. For both Windows guests aim for 20 GiB free RAM and 120 GiB additional storage capacity. The Windows disks are thin provisioned.
+- Use x86-64 Linux with hardware KVM, system libvirt, QEMU, and dnsmasq. Expose nested virtualization on a VM host. Reserve 10 GiB RAM and approximately 55 GiB disk for the NixOS slice, including build cache. The office workstation has 4 vCPUs, 4 GiB RAM and a 24 GiB thin disk. To run all guests, including both Windows VMs, aim for 22 GiB free RAM and 120 GiB of additional storage capacity. The Windows disks are thin provisioned.
 - On NixOS enable `virtualisation.libvirtd.enable` and add your operator to `libvirtd` and `kvm`. On Debian/Ubuntu install `qemu-system-x86 libvirt-daemon-system libvirt-clients dnsmasq-base` and add your operator to `libvirt` and `kvm`. Re-login, run `virsh -c qemu:///system list`, and verify `test -w /dev/kvm`. Windows also needs OVMF with Microsoft enrolled keys and `swtpm`.
 - Run `nix --extra-experimental-features 'nix-command flakes' develop` for the pinned tools. Outside the dev shell use OpenTofu 1.10.6, Ansible Core, Just, Python 3, OpenSSH, `mkisofs` (or `genisoimage` with the alias), `xsltproc`, and ShellCheck. Building the pinned guest images still requires Nix on a non-NixOS host. The first build and provider initialization require network access for package caches and provider binaries. CI makes no Cloudflare requests and starts no VMs.
 
@@ -43,7 +43,7 @@ The IoT gateway has one interface on the IoT switch and one on the office uplink
 just check          # real provider schemas, mocked cloud plans, NixOS evaluation and lint
 just plan           # build role images and print the local plan
 just up             # review and type yes
-just configure      # wait for cloud-init and provision the Samba login
+just configure      # wait for cloud-init and provision the Samba and GNOME logins
 just test           # encrypted SMB, actual IPP Print-Job, and no direct private path
 just ssh origin 'sudo systemctl status lab-printer --no-pager'
 ```
@@ -54,7 +54,7 @@ For a handoff to a new host and account, start from a fresh clone. The bring-up 
 
 ## Browser consoles
 
-Apache Guacamole puts the five headless NixOS SSH terminals and both Windows graphical consoles in one browser tab. The Windows connections use the existing libvirt VNC consoles and follow the active ports after a VM restarts or moves. The origin's SSH connection reaches the resource network through the connector. [Guacamole architecture](https://guacamole.apache.org/doc/gug/guacamole-architecture.html)
+Apache Guacamole lists five NixOS SSH terminals and three graphical consoles in one browser tab. The office workstation and both Windows guests use libvirt VNC. The relay follows the current loopback port after a VM restarts or moves. The origin's SSH connection reaches the resource network through the connector. [Guacamole architecture](https://guacamole.apache.org/doc/gug/guacamole-architecture.html)
 
 Each Linux connection opens a Go terminal app built with Bubble Tea, Bubbles, and Lip Gloss. Use the arrow keys and Enter to run an action, or press its number. Scroll command output with the arrow keys or Page Up/Page Down. Press Esc to return to the menu, `S` to open a shell, and `Q` to disconnect. Service restarts require `Y` confirmation. `just ssh` opens a shell directly. [Charm libraries](https://github.com/charmbracelet)
 
@@ -62,7 +62,7 @@ Workstations have WARP and connectivity checks. The connector has Tunnel readine
 
 On the lab host, install Docker Engine with Compose and give the lab operator access to Docker and system libvirt. The operator also needs an active systemd user manager. After `just up` and `just configure`, run `just console-up`. The launcher uses the lab's SSH host keys, collecting one through the normal lab SSH setup for any Linux guest first seen during console setup. Start the Windows VMs with `just windows-up` to use their consoles.
 
-Rerun `just console-up` to build the Nix package and install its static binary on the reachable Linux guests, then reconnect any open Linux console tabs. Bring an offline guest online and rerun the command to catch it up. To build the package by itself, run `nix --extra-experimental-features 'nix-command flakes' build --no-link .#cfztna-console`.
+Rerun `just console-up` to build the Nix package and install its static binary on the reachable Linux guests, then reconnect any open Linux console tabs. Bring an offline guest online and rerun the command to catch it up. If upgrading a running console deployment from before office VNC support, run `just console-down` followed by `just console-up` to refresh the relay listeners. To build the package by itself, run `nix --extra-experimental-features 'nix-command flakes' build --no-link .#cfztna-console`.
 
 From your own machine, forward the web port over SSH, then open `http://127.0.0.1:8788/guacamole/` in a browser.
 
@@ -73,6 +73,18 @@ ssh -N -L 127.0.0.1:8788:127.0.0.1:8788 lab-operator@lab-host
 Sign in as `lab-console` with the generated password in `.lab/console/password` on the host. Use the guest's existing Windows credentials at its sign-in screen. Guacamole and its relays bind to loopback. Keep the management page behind the SSH forward and restrict the console login to trusted lab operators. The ignored `.lab/console/` directory contains credentials and a private Guacamole mapping. The GUI needs no Cloudflare changes.
 
 Run `just console-down` to remove the console containers and stop the relay. Keep the generated password for future starts. If the relay stops when the operator signs out of the host, keep the host login open or configure systemd user lingering for that operator.
+
+### Office desktop
+
+Open **Office desktop (VNC)** and select **Lab Employee** at the GNOME login screen. The local username is `employee` and `just configure` stores its generated password in `.lab/office-desktop-password` on the host. The employee account has no administrative rights. Use **office (SSH)** for the network diagnostics menu.
+
+The desktop includes Firefox, LibreOffice Writer, Calc and Impress, GNOME Files and PDF tools, and CUPS printing. Firefox uses the verified Gateway CA installed by `just trust-ca`. On an enrolled office workstation, open `smb://192.168.250.10/Work` in Files and authenticate as `labshare` with the generated SMB password. To add the virtual printer by its IPP URL, run this from the lab host with WARP connected.
+
+```sh
+just ssh office 'sudo -n lpadmin -p LabPrinter -E -v ipp://192.168.250.10:631/ipp/print -m everywhere'
+```
+
+When upgrading a checkout that provisioned the earlier headless office image, review `just plan` for disk replacement. Save any local work and have the enrollment credentials available before applying a replacement.
 
 ## Dedicated Cloudflare setup
 
@@ -94,7 +106,7 @@ Run `just console-down` to remove the console containers and stop the relay. Kee
    For a personal account explicitly approved for lab reuse, back up the existing Zero Trust settings and review any active users, routes, and policies before changing account-wide traffic settings. Use `approved-poc:$TF_VAR_account_id` for the confirmation on that account. Keep billing outside the lab setup.
 
 3. Retrieve the newly created `cfztna-lab` remotely managed Tunnel's connector secret in the dedicated dashboard. Set `CFZTNA_TUNNEL_TOKEN` from your secret store and run `just connector`. Verify `just ssh connector 'curl -fsS http://127.0.0.1:20241/ready'` and Tunnel health in the dashboard. Systemd passes the secret to cloudflared from a root-only credential file. The token is outside OpenTofu state.
-4. Independently verify the downloaded CA fingerprint against the lab account, then run `just trust-ca /path/to/lab-gateway.pem`. That adds the root to the Linux CLI probe bundle. Configure other NixOS applications' trust independently, or add the verified root via `security.pki.certificateFiles` and rebuild the clients. For Windows use the guest's Local Computer trusted root store or Cloudflare's certificate deployment. Leave host trust untouched. TLS-pinned applications and private browser/runtime stores need individual evaluation.
+4. Independently verify the downloaded CA fingerprint against the lab account, then run `just trust-ca /path/to/lab-gateway.pem`. That makes the root available to the Linux CLI probes and the office Firefox policy. Restart Firefox after changing the root. Configure other NixOS applications' trust independently, or add the verified root via `security.pki.certificateFiles` and rebuild the clients. For Windows use the guest's Local Computer trusted root store or Cloudflare's certificate deployment. Leave host trust untouched. TLS-pinned applications and private browser/runtime stores need individual evaluation.
 5. For each Linux endpoint, inject `CFZTNA_WARP_TEAM`, `CFZTNA_WARP_CLIENT_ID` and `CFZTNA_WARP_CLIENT_SECRET` from the secret store and run `just enroll-warp office`, `just enroll-warp remote` or `just enroll-warp iot-gateway` with that endpoint's token. The play installs the root-only managed profile and starts WARP. The workstation play also stages the lab posture marker. For Windows use [the Windows runbook](windows/README.md). Verify the registration and posture in Zero Trust. The devices use the shared `non_identity@<team>.cloudflareaccess.com` identity. [Headless deployment](https://developers.cloudflare.com/cloudflare-one/tutorials/deploy-client-headless-linux/)
 
 [Cloudflare IaC](iac/cloud/main.tf) pins the [official v5.24.0 provider](https://github.com/cloudflare/terraform-provider-cloudflare/tree/v5.24.0/docs/resources). It creates a scoped Traffic and DNS profile using MASQUE, lock, 30-second reconnect, and explicit exclusions. Management gateway /32s and link-local/broadcast/multicast are excluded. The resource /32s remain routed into WARP. Leave local network access and unrelated Local Domain Fallback disabled. The private default-deny applies to each lab origin. Its higher-priority exception requires the shared service-registration identity and a passing posture check for the approved TCP ports. The protected file is a test signal. Production should use a managed certificate or an MDM/compliance integration and IdP groups. HTTPS traffic is verified with a path-specific canary at `https://example.com/cfztna-lab-block`, a same-host control request, and the Gateway root. The DNS canary is `example.net`. Inspect the exact policy names in Gateway logs. [Private routing](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/private-net/cloudflared/connect-cidr/) · [TLS decryption](https://developers.cloudflare.com/cloudflare-one/traffic-controls/http-policies/tls-decryption/)

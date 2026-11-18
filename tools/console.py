@@ -21,6 +21,7 @@ MACHINES = json.loads((ROOT / "topology.json").read_text())["machines"]
 LOOPBACK = "127.0.0.1"
 ORIGIN_RELAY = 24823
 WINDOWS_RELAYS = {"client": 24824, "server": 24825}
+OFFICE_VNC_RELAY = 24826
 SSH = ["ssh", "-F", str(LAB / "ssh_config")]
 
 
@@ -96,6 +97,7 @@ def prepare():
                        command=menu_command(role))
     for role, port in WINDOWS_RELAYS.items():
         add_connection(user, f"Windows {role} (VNC)", "vnc", hostname=LOOPBACK, port=port)
+    add_connection(user, "Office desktop (VNC)", "vnc", hostname=LOOPBACK, port=OFFICE_VNC_RELAY)
 
     ET.indent(credentials)
     with tempfile.NamedTemporaryFile(dir=home, delete=False) as staged:
@@ -103,11 +105,20 @@ def prepare():
     Path(staged.name).replace(home / "user-mapping.xml")
 
 
-def windows_port(xml):
+def vnc_port(xml, role):
     domain = ET.fromstring(xml)
     graphics = domain.find("devices/graphics[@type='vnc']")
-    if (not domain.get("id") or domain.find(f"metadata/{{{NAMESPACE}}}managed") is None
-            or graphics is None or graphics.get("listen") != LOOPBACK):
+    if role == "office":
+        interface = domain.find("devices/interface[@type='network']")
+        source = interface.find("source") if interface is not None else None
+        mac = interface.find("mac") if interface is not None else None
+        managed = (domain.findtext("name") == "cfztna-office" and source is not None
+                   and source.get("network") == "cfztna-office" and mac is not None
+                   and mac.get("address") == MACHINES["office"]["mac"])
+    else:
+        managed = (domain.findtext("name") == domain_name(role)
+                   and domain.find(f"metadata/{{{NAMESPACE}}}managed") is not None)
+    if not (domain.get("id") and managed and graphics is not None and graphics.get("listen") == LOOPBACK):
         raise ValueError("Expected a running lab guest with loopback VNC.")
     port = int(graphics.get("port", "0"))
     if not 5900 <= port <= 65535:
@@ -116,11 +127,12 @@ def windows_port(xml):
 
 
 def active_vnc_port(role):
+    name = "cfztna-office" if role == "office" else domain_name(role)
     result = subprocess.run(
-        ["virsh", "-c", "qemu:///system", "dumpxml", domain_name(role)],
+        ["virsh", "-c", "qemu:///system", "dumpxml", name],
         check=True, capture_output=True, text=True, timeout=5,
     )
-    return windows_port(result.stdout)
+    return vnc_port(result.stdout, role)
 
 
 async def copy(reader, writer):
@@ -167,7 +179,7 @@ async def relay(reader, writer, role):
 async def serve():
     listeners = []
     try:
-        for role, port in {"origin": ORIGIN_RELAY, **WINDOWS_RELAYS}.items():
+        for role, port in {"origin": ORIGIN_RELAY, "office": OFFICE_VNC_RELAY, **WINDOWS_RELAYS}.items():
             listeners.append(await asyncio.start_server(
                 lambda reader, writer, role=role: relay(reader, writer, role), LOOPBACK, port,
             ))

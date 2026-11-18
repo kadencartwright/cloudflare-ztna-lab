@@ -1,6 +1,7 @@
 { config, lib, pkgs, modulesPath, name, topology, ... }:
 let
   machine = topology.machines.${name};
+  isOffice = name == "office";
   isIoT = name == "iot-gateway";
   isClient = builtins.elem name [ "office" "remote" ];
   isConnector = name == "connector";
@@ -20,9 +21,9 @@ in {
   imports = [
     (modulesPath + "/profiles/qemu-guest.nix")
     (modulesPath + "/virtualisation/disk-image.nix")
-  ] ++ lib.optional isIoT ./iot-gateway.nix;
+  ] ++ lib.optional isIoT ./iot-gateway.nix ++ lib.optional isOffice ./office-desktop.nix;
   image.efiSupport = false;
-  virtualisation.diskSize = 6144;
+  virtualisation.diskSize = if isOffice then 24576 else 6144;
   system.stateVersion = "26.05";
   boot.kernelParams = [ "console=ttyS0,115200" ];
   boot.loader.timeout = 1;

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import unittest
 
-from tools.console import windows_port
+from tools.console import vnc_port
 from tools.windows import domain_xml, NETWORKS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,16 +48,37 @@ class TopologyTests(unittest.TestCase):
         graphics = domain.find("devices/graphics")
         graphics.set("port", "5907")
         with self.assertRaises(ValueError):
-            windows_port(ET.tostring(domain))
+            vnc_port(ET.tostring(domain), "client")
         domain.set("id", "1")
-        self.assertEqual(windows_port(ET.tostring(domain)), 5907)
+        self.assertEqual(vnc_port(ET.tostring(domain), "client"), 5907)
         graphics.set("listen", "0.0.0.0")
         with self.assertRaises(ValueError):
-            windows_port(ET.tostring(domain))
+            vnc_port(ET.tostring(domain), "client")
         graphics.set("listen", "127.0.0.1")
         domain.remove(domain.find("metadata"))
         with self.assertRaises(ValueError):
-            windows_port(ET.tostring(domain))
+            vnc_port(ET.tostring(domain), "client")
+
+    def test_console_recognizes_the_managed_office_desktop(self):
+        import xml.etree.ElementTree as ET
+
+        mac = TOPOLOGY["machines"]["office"]["mac"]
+        domain = ET.fromstring(f"""
+            <domain id="3">
+              <name>cfztna-office</name>
+              <devices>
+                <interface type="network">
+                  <source network="cfztna-office"/>
+                  <mac address="{mac}"/>
+                </interface>
+                <graphics type="vnc" listen="127.0.0.1" port="5901"/>
+              </devices>
+            </domain>
+        """)
+        self.assertEqual(vnc_port(ET.tostring(domain), "office"), 5901)
+        domain.find("devices/interface/source").set("network", "cfztna-home")
+        with self.assertRaises(ValueError):
+            vnc_port(ET.tostring(domain), "office")
 
 
 class UnattendedTests(unittest.TestCase):

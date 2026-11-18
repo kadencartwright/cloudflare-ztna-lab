@@ -4,7 +4,7 @@
   "resources": {"cidr": "192.168.250.0/24", "gateway": "192.168.250.2"},
   "iot": {"cidr": "192.168.249.0/24", "gateway": "192.168.249.1"},
   "machines": {
-    "office": {"segment": "office", "ip": "192.168.246.10", "mac": "52:54:00:cf:46:10", "ram": 2048},
+    "office": {"segment": "office", "ip": "192.168.246.10", "mac": "52:54:00:cf:46:10", "ram": 4096, "vcpus": 4},
     "remote": {"segment": "home", "ip": "192.168.247.10", "mac": "52:54:00:cf:47:10", "ram": 2048},
     "connector": {"segment": "office", "ip": "192.168.246.20", "mac": "52:54:00:cf:46:20", "ram": 1024},
     "origin": {"segment": "resources", "ip": "192.168.250.10", "mac": "52:54:00:cf:50:10", "ram": 1024},

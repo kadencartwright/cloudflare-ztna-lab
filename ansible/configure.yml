@@ -28,3 +28,17 @@
       loop: [445, 631]
       delegate_to: connector
       become: false
+
+- name: Provision the office desktop account
+  hosts: office
+  gather_facts: false
+  become: true
+  vars:
+    desktop_password: "{{ lookup('ansible.builtin.password', '../.lab/office-desktop-password', chars=['ascii_letters', 'digits'], length=24) }}"
+  tasks:
+    - name: Set the local GNOME login password
+      ansible.builtin.command:
+        argv: [chpasswd]
+        stdin: "employee:{{ desktop_password }}"
+      no_log: true
+      changed_when: true
