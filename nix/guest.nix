@@ -8,7 +8,6 @@ let
   isOrigin = name == "origin";
   origin = topology.machines.origin.ip;
   segment = topology.${machine.segment};
-  officeGw = topology.office.gateway;
   connectorIP = topology.resources.gateway;
   net = mac: address: gateway: dns: {
     matchConfig.MACAddress = mac;
@@ -46,6 +45,7 @@ in {
             iifname "lo" accept${lib.optionalString isIoT (
               "\niifname \"iot0\" udp sport 68 udp dport 67 accept"
               + "\niifname \"iot0\" ip saddr ${topology.iot.cidr} meta l4proto { tcp, udp } th dport 53 accept"
+              + "\niifname \"resource0\" ip saddr { ${origin}, ${topology.windows_server_ip} } ip daddr ${topology.gateway_resource_ip} meta l4proto { tcp, udp } th dport 53 accept"
             )}
             ct state established,related accept
             ${if isOrigin then ''
@@ -56,23 +56,8 @@ in {
           }
           chain forward {
             ${if isIoT then "type filter hook forward priority 0; policy accept;" else "type filter hook forward priority 0; policy drop;"}
-            ${lib.optionalString isConnector ''
-              ct state established,related accept
-              iifname "resource0" oifname "uplink0" ip saddr { ${origin}, ${topology.windows_server_ip} } ip daddr ${officeGw} meta l4proto { tcp, udp } th dport 53 accept
-              iifname "resource0" oifname "uplink0" ip saddr { ${origin}, ${topology.windows_server_ip} } ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } tcp dport { 80, 443 } accept
-            ''}
           }
         }
-        ${lib.optionalString isConnector ''
-          table ip lab_nat
-          flush table ip lab_nat
-          table ip lab_nat {
-            chain postrouting {
-              type nat hook postrouting priority srcnat; policy accept;
-              oifname "uplink0" ip saddr ${topology.resources.cidr} masquerade
-            }
-          }
-        ''}
       '';
     };
   };
@@ -91,14 +76,15 @@ in {
     };
   };
   systemd.network.networks = {
-    "10-primary" = net machine.mac machine.ip segment.gateway
-      (if isOrigin then officeGw else segment.gateway);
+    "10-primary" =
+      let gateway = if isOrigin then topology.gateway_resource_ip else segment.gateway;
+      in net machine.mac machine.ip gateway gateway;
   } // lib.optionalAttrs isConnector {
     "10-resource" = net topology.connector_resource_mac connectorIP null null;
   };
 
   boot.kernel.sysctl = {
-    "net.ipv4.ip_forward" = if isConnector || isIoT then 1 else 0;
+    "net.ipv4.ip_forward" = if isIoT then 1 else 0;
   } // lib.optionalAttrs isOrigin {
     # The CUPS IPP emulator insists on creating an IPv6 listening socket.
     # Only loopback has IPv6; the resource NIC remains IPv4-only.

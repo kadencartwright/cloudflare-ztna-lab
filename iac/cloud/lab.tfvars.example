@@ -1,5 +1,6 @@
 team_name = "example-lab"
 enrollment_token_uuids = ["00000000-0000-0000-0000-000000000001"]
+gateway_enrollment_token_uuid = "00000000-0000-0000-0000-000000000001"
 
 # Set true only once the isolated Windows file server is configured.
 expose_windows_server = false

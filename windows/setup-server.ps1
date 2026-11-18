@@ -2,20 +2,30 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$InterfaceAlias,
-    [SecureString]$SharePassword
+    [SecureString]$SharePassword,
+    [string]$GatewayCaPath
 )
 $ErrorActionPreference = 'Stop'
 $ip = '192.168.250.30'
 $connector = '192.168.250.2'
+$gateway = '192.168.250.3'
 $account = 'labshare'
 $share = 'WinWork'
 $path = 'C:\CFZTNA\WinWork'
 
 Set-NetIPInterface -InterfaceAlias $InterfaceAlias -AddressFamily IPv4 -Dhcp Disabled
 if (-not (Get-NetIPAddress -InterfaceAlias $InterfaceAlias -IPAddress $ip -ErrorAction SilentlyContinue)) {
-    New-NetIPAddress -InterfaceAlias $InterfaceAlias -IPAddress $ip -PrefixLength 24 -DefaultGateway $connector
+    New-NetIPAddress -InterfaceAlias $InterfaceAlias -IPAddress $ip -PrefixLength 24
 }
-Set-DnsClientServerAddress -InterfaceAlias $InterfaceAlias -ServerAddresses '192.168.246.1'
+$defaultRoutes = Get-NetRoute -InterfaceAlias $InterfaceAlias -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue
+if (-not ($defaultRoutes | Where-Object NextHop -eq $gateway)) {
+    New-NetRoute -InterfaceAlias $InterfaceAlias -DestinationPrefix '0.0.0.0/0' -NextHop $gateway
+}
+$defaultRoutes | Where-Object NextHop -ne $gateway | Remove-NetRoute -Confirm:$false
+Set-DnsClientServerAddress -InterfaceAlias $InterfaceAlias -ServerAddresses $gateway
+if ($GatewayCaPath) {
+    Import-Certificate -FilePath $GatewayCaPath -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
+}
 Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled True -DefaultInboundAction Block
 # Disable the broader built-in SMB inbound rules, including language-neutral rule names.
 Get-NetFirewallRule -Name 'FPS-SMB-In-TCP*' -ErrorAction SilentlyContinue | Disable-NetFirewallRule

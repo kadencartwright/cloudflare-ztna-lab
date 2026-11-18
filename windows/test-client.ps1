@@ -1,7 +1,7 @@
-# Run from Windows 11 after enrolling the Cloudflare One Client.
+# Run on an enrolled Windows 11 client or check server web egress via the gateway.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('allow','deny','pre-warp')][string]$Expected,
+    [Parameter(Mandatory)][ValidateSet('allow','deny','pre-warp','server-egress')][string]$Expected,
     [switch]$WindowsServer,
     [PSCredential]$Credential
 )
@@ -25,6 +25,15 @@ try {
             throw "Expected the Gateway block response for the encrypted canary path, got $blocked"
         }
         Write-Output "HTTPS canary status $blocked with trusted TLS"
+    }
+    if ($Expected -eq 'server-egress') {
+        $route = Find-NetRoute -RemoteIPAddress '1.1.1.1'
+        $route | Format-Table InterfaceAlias,DestinationPrefix,NextHop
+        if (-not ($route | Where-Object NextHop -eq '192.168.250.3')) {
+            throw 'Expected server web egress through 192.168.250.3.'
+        }
+        Write-Output 'Windows Server HTTPS egress verified.'
+        return
     }
     $routes = Find-NetRoute -RemoteIPAddress $ip
     $routes | Format-Table InterfaceAlias,DestinationPrefix,NextHop

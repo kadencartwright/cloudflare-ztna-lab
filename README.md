@@ -7,7 +7,7 @@ flowchart LR
   O["GNOME office or Windows 11<br/>WARP runs here"] --> ON[Office employee NAT]
   R["NixOS home or Windows 11<br/>WARP runs here"] --> HN[Home NAT]
   I[IoT devices] --> IL[Isolated IoT LAN]
-  IL -->|Public IPv4 and DNS only| IG[NixOS IoT gateway running WARP]
+  IL -->|Public IPv4 and DNS only| IG["NixOS egress gateway<br/>WARP runs here"]
   IG -->|Office-facing NIC| ON
   ON -->|Encrypted WARP and cloudflared traffic| E[Cloudflare Gateway and Tunnel edge]
   HN -->|Encrypted WARP traffic| E
@@ -16,21 +16,22 @@ flowchart LR
   C -->|Second NIC| V[Isolated resource segment]
   V --> L["NixOS Samba and IPP<br/>Private origin behind the Tunnel"]
   V --> S["Windows Server SMB<br/>Private origin behind the Tunnel"]
+  V -->|Server web egress and DNS| IG
 ```
 
-The workstations and IoT gateway run WARP and encrypt traffic before it reaches NAT. The office NAT also carries the connector's separate outbound `cloudflared` connection. Cloudflare Gateway evaluates employee requests. The connector delivers authorized SMB and IPP traffic to the NixOS and Windows file servers over the isolated resource LAN. WARP enrollment belongs to the workstations and IoT gateway. [Cloudflare connectivity options](https://developers.cloudflare.com/cloudflare-one/networks/connectivity-options/)
+The workstations run WARP on-device. The shared egress gateway runs WARP for the IoT LAN and for both file servers. The office NAT also carries the connector's separate outbound `cloudflared` connection. The connector delivers authorized inbound SMB and IPP requests over the resource LAN. The file servers use the egress gateway for outbound web traffic and DNS. [Cloudflare connectivity options](https://developers.cloudflare.com/cloudflare-one/networks/connectivity-options/)
 
 | Segment | Addresses | Function |
 | --- | --- | --- |
 | Office employees | 192.168.246.0/24, gateway .1, office .10, connector .20, IoT gateway uplink .30 | Office, connector, and IoT gateway egress |
 | Home | 192.168.247.0/24, gateway .1, remote .10 | Independent remote egress |
 | IoT LAN | 192.168.249.0/24, gateway and DNS .1, DHCP .100–.199 | Isolated switch with DHCP and WARP egress supplied by the IoT gateway |
-| Office resources | 192.168.250.0/24, connector .2, NixOS origin .10, Windows Server .30 | Unnumbered switch on the hypervisor |
+| Office resources | 192.168.250.0/24, connector .2, WARP egress and DNS .3, NixOS origin .10, Windows Server .30 | Unnumbered switch on the hypervisor |
 | Windows 11 | DHCP .100–.199 on either NAT network | Move one enrolled client between sites |
 
-Separate libvirt switches model office employee and resource VLAN broadcast domains without an 802.1Q trunk. The lightweight Linux connector replaces a firewall appliance. Its nftables rules drop employee-to-resource forwarding and permit resource-initiated DNS to the office gateway and public TCP 80/443 for updates. The origins accept service traffic only from the connector's resource IP. Resource SSH uses a jump through the connector and a lab-only key. Cloudflare Tunnel makes outbound connections and advertises each enabled origin as a /32. The home switch has no interface on the resource segment.
+Separate libvirt switches model office employee and resource VLAN broadcast domains without an 802.1Q trunk. The connector's firewall drops routed traffic and allows its local `cloudflared` process to reach private services. The origins accept service traffic only from the connector's resource IP. Resource SSH uses a jump through the connector and a lab-only key. Cloudflare Tunnel makes outbound connections and advertises each enabled origin as a /32. The home switch has no interface on the resource segment.
 
-The IoT gateway has one interface on the IoT switch and one on the office uplink. It forwards public traffic through its own WARP registration and blocks IoT devices from reaching office and private resource addresses. [IoT setup and tests](#iot-egress-through-cloudflare-gateway)
+The shared gateway has separate interfaces on the IoT switch, resource switch, and office uplink. It forwards public traffic through its own WARP registration and blocks traffic between the isolated networks. [IoT setup and tests](#iot-egress-through-cloudflare-gateway)
 
 ## Host setup
 
@@ -109,7 +110,7 @@ When upgrading a checkout that provisioned the earlier headless office image, re
 
    ```sh
    cp iac/cloud/lab.tfvars.example iac/cloud/lab.tfvars
-   # Set team_name and enrollment_token_uuids in iac/cloud/lab.tfvars.
+   # Set team_name, enrollment_token_uuids, and gateway_enrollment_token_uuid.
    # Use the Access token resource UUIDs. Keep the client secrets outside IaC.
    just cloud-plan
    # Review the account, rules and /32 routes in the plan.
@@ -117,10 +118,10 @@ When upgrading a checkout that provisioned the earlier headless office image, re
    ```
 
 3. Retrieve the newly created `cfztna-lab` remotely managed Tunnel's connector secret in the dedicated dashboard. Set `CFZTNA_TUNNEL_TOKEN` from your secret store and run `just connector`. Verify `just ssh connector 'curl -fsS http://127.0.0.1:20241/ready'` and Tunnel health in the dashboard. Systemd passes the secret to cloudflared from a root-only credential file. The token is outside OpenTofu state.
-4. Independently verify the downloaded CA fingerprint against the lab account, then run `just trust-ca /path/to/lab-gateway.pem`. That makes the root available to the Linux CLI probes and the office Firefox policy. Restart Firefox after changing the root. Configure other NixOS applications' trust independently, or add the verified root via `security.pki.certificateFiles` and rebuild the clients. For Windows use the guest's Local Computer trusted root store or Cloudflare's certificate deployment. Leave host trust untouched. TLS-pinned applications and private browser/runtime stores need individual evaluation.
+4. Independently verify the downloaded CA fingerprint against the lab account, then run `just trust-ca /path/to/lab-gateway.pem`. That makes the root available to the Linux workstation and Samba server CLI probes and the office Firefox policy. Restart Firefox after changing the root. Configure other NixOS applications' trust independently, or add the verified root via `security.pki.certificateFiles` and rebuild the guests. For Windows use the guest's Local Computer trusted root store or Cloudflare's certificate deployment. Leave host trust untouched. TLS-pinned applications and private browser/runtime stores need individual evaluation.
 5. For each Linux endpoint, inject `CFZTNA_WARP_TEAM`, `CFZTNA_WARP_CLIENT_ID` and `CFZTNA_WARP_CLIENT_SECRET` from the secret store and run `just enroll-warp office`, `just enroll-warp remote` or `just enroll-warp iot-gateway` with that endpoint's token. The play installs the root-only managed profile and starts WARP. The workstation play also stages the lab posture marker. For Windows use [the Windows runbook](windows/README.md). Verify the registration and posture in Zero Trust. The devices use the shared `non_identity@<team>.cloudflareaccess.com` identity. [Headless deployment](https://developers.cloudflare.com/cloudflare-one/tutorials/deploy-client-headless-linux/)
 
-[Cloudflare IaC](iac/cloud/main.tf) pins the [official v5.24.0 provider](https://github.com/cloudflare/terraform-provider-cloudflare/tree/v5.24.0/docs/resources). It creates a scoped Traffic and DNS profile using MASQUE, lock, 30-second reconnect, and explicit exclusions. Management gateway /32s and link-local/broadcast/multicast are excluded. The resource /32s remain routed into WARP. Leave local network access and unrelated Local Domain Fallback disabled. The private default-deny applies to each lab origin. Its higher-priority exception requires the shared service-registration identity and a passing posture check for the approved TCP ports. The protected file is a test signal. Production should use a managed certificate or an MDM/compliance integration and IdP groups. HTTPS traffic is verified with a path-specific canary at `https://example.com/cfztna-lab-block`, a same-host control request, and the Gateway root. The DNS canary is `example.net`. Inspect the exact policy names in Gateway logs. [Private routing](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/private-net/cloudflared/connect-cidr/) · [TLS decryption](https://developers.cloudflare.com/cloudflare-one/traffic-controls/http-policies/tls-decryption/)
+[Cloudflare IaC](iac/cloud/main.tf) pins the [official v5.24.0 provider](https://github.com/cloudflare/terraform-provider-cloudflare/tree/v5.24.0/docs/resources). It creates scoped Traffic and DNS profiles using MASQUE, lock, 30-second reconnect, and explicit exclusions. Management gateway /32s and link-local/broadcast/multicast are excluded. The resource /32s remain routed into WARP for the workstations. The higher-priority egress profile matches only the gateway's service token and treats its resource LAN as local. Leave local network access and unrelated Local Domain Fallback disabled. The private default-deny applies to each lab origin. Its higher-priority exception requires the shared service-registration identity and a passing posture check for the approved TCP ports. The protected file is a test signal. Production should use a managed certificate or an MDM/compliance integration and IdP groups. HTTPS traffic is verified with a path-specific canary at `https://example.com/cfztna-lab-block`, a same-host control request, and the Gateway root. The DNS canary is `example.net`. Inspect the exact policy names in Gateway logs. [Private routing](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/private-net/cloudflared/connect-cidr/) · [TLS decryption](https://developers.cloudflare.com/cloudflare-one/traffic-controls/http-policies/tls-decryption/)
 
 ### Fail-closed and bootstrap
 
@@ -148,6 +149,12 @@ Run the first four with the managed marker present on both Linux workstations. E
 The overlap test adds a competing on-link resource /24 to the home client and checks that the WARP path continues to carry SMB. The connector outage stops only the tunnel and checks private failure with working public HTTPS. The fail-closed test stops WARP, tries direct public DNS and HTTPS using an independently resolved IP, verifies nftables drop counters and checks recovery. Live cases exit 77 until explicitly enabled. Local results establish service delivery and isolation before enrollment.
 
 `just test-cloud` runs the Linux workstation checks. Use the [Windows runbook](windows/README.md) and the [IoT checks below](#iot-egress-through-cloudflare-gateway) to verify those paths on each new deployment.
+
+### File server web egress
+
+Both file servers use `192.168.250.3` as their default gateway and DNS resolver. The gateway permits public TCP 80/443 from those two addresses only through its WARP interface. UDP and alternate ports are blocked on the server egress path, including QUIC over UDP 443. When WARP is unavailable, the server routing table has an unreachable default. Cloudflare sees the gateway's enrollment identity for both servers. Keep Gateway TLS decryption enabled and avoid decryption bypass rules for this traffic. Applications with pinning or incompatible TLS may fail when inspection is required. [Cloudflare TLS decryption](https://developers.cloudflare.com/cloudflare-one/traffic-controls/http-policies/tls-decryption/)
+
+After installing the verified Gateway CA, run `CFZTNA_LIVE=1 just test-cloud server-egress`. It checks the Samba server's certificate chain, the path-specific HTTPS canary, and that forcing a route through the connector fails. Run `test-client.ps1 -Expected server-egress` on Windows Server to check trusted HTTPS, the same canary, and the selected next hop.
 
 ## Windows guests
 

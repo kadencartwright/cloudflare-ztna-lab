@@ -3,6 +3,7 @@ mock_provider "cloudflare" {}
 variables {
   team_name                          = "example-lab"
   enrollment_token_uuids             = ["00000000-0000-0000-0000-000000000001"]
+  gateway_enrollment_token_uuid      = "00000000-0000-0000-0000-000000000001"
   account_id                         = "00000000000000000000000000000000"
   dedicated_lab_account_confirmation = "dedicated-lab:00000000000000000000000000000000"
 }
@@ -23,6 +24,16 @@ run "scoped_default" {
   assert {
     condition     = cloudflare_zero_trust_device_custom_profile.lab.switch_locked && !cloudflare_zero_trust_device_custom_profile.lab.allowed_to_leave
     error_message = "The lab profile must lock the client controls."
+  }
+
+  assert {
+    condition = (
+      cloudflare_zero_trust_device_custom_profile.egress.precedence < cloudflare_zero_trust_device_custom_profile.lab.precedence &&
+      cloudflare_zero_trust_device_custom_profile.egress.match == "identity.service_token_uuid == \"00000000-0000-0000-0000-000000000001\"" &&
+      contains([for entry in cloudflare_zero_trust_device_custom_profile.egress.exclude : entry.address], "192.168.250.0/24") &&
+      !contains([for entry in cloudflare_zero_trust_device_custom_profile.lab.exclude : entry.address], "192.168.250.0/24")
+    )
+    error_message = "Only the gateway profile should treat the resource LAN as local."
   }
 }
 

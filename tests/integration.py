@@ -283,9 +283,28 @@ def fail_closed():
         wait_for_tcp(role)
 
 
+def server_egress():
+    warp_ready("iot-gateway")
+    https("origin")
+    address = ssh("origin", "egress-public-ip",
+                  f"{CURL} --fail -o /dev/null -w '%{{remote_ip}}' https://example.com/").stdout.strip()
+    route = ssh("origin", "server-egress-route", ["ip", "-4", "route", "get", address]).stdout
+    if f"via {TOPOLOGY['gateway_resource_ip']} dev resource0" not in route:
+        raise RuntimeError("Samba server did not select the Gateway router.")
+    forced = [f"{address}/32", "via", TOPOLOGY["resources"]["gateway"]]
+    ssh("origin", "force-connector-egress", ["sudo", "ip", "route", "add", *forced])
+    try:
+        ssh("origin", "connector-cannot-bypass-gateway",
+            f"{CURL} --resolve example.com:443:{shlex.quote(address)} https://example.com/", allowed=(7, 28))
+    finally:
+        ssh("origin", "remove-connector-egress", ["sudo", "ip", "route", "del", *forced])
+    https("origin")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=("local", "allow", "deny-posture", "overlap", "outage", "fail-closed"))
+    parser.add_argument("scenario", choices=("local", "allow", "deny-posture", "overlap", "outage",
+                                              "fail-closed", "server-egress"))
     args = parser.parse_args()
     if args.scenario != "local" and os.environ.get("CFZTNA_LIVE") != "1":
         print("SKIP: dedicated Cloudflare lab and prepared registrations required; set CFZTNA_LIVE=1.")
@@ -294,7 +313,8 @@ def main():
     if args.scenario in {"allow", "deny-posture"}:
         device_policy(args.scenario)
     else:
-        {"local": local, "overlap": overlap, "outage": outage, "fail-closed": fail_closed}[args.scenario]()
+        {"local": local, "overlap": overlap, "outage": outage, "fail-closed": fail_closed,
+         "server-egress": server_egress}[args.scenario]()
     print(f"PASS: {args.scenario}")
     return 0
 

@@ -104,7 +104,10 @@ resource "libvirt_domain" "guest" {
   }
 
   dynamic "network_interface" {
-    for_each = each.key == "connector" ? { resources = local.topology.connector_resource_mac } : each.key == "iot-gateway" ? { iot = local.topology.iot_gateway_lan_mac } : {}
+    for_each = each.key == "connector" ? { resources = local.topology.connector_resource_mac } : each.key == "iot-gateway" ? {
+      iot       = local.topology.iot_gateway_lan_mac
+      resources = local.topology.gateway_resource_mac
+    } : {}
     content {
       network_id = libvirt_network.segment[network_interface.key].id
       mac        = network_interface.value

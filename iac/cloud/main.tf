@@ -47,6 +47,14 @@ variable "expose_windows_server" {
   default = false
 }
 
+variable "gateway_enrollment_token_uuid" {
+  type = string
+  validation {
+    condition     = contains(var.enrollment_token_uuids, var.gateway_enrollment_token_uuid)
+    error_message = "Enter the IoT gateway service token resource UUID from enrollment_token_uuids."
+  }
+}
+
 locals {
   topology = jsondecode(file("${path.module}/../../topology.json"))
   origins = merge(
@@ -59,6 +67,16 @@ locals {
   ])
   destinations  = join(" ", [for origin in local.origins : origin.ip])
   private_ports = join(" or ", [for origin in local.origins : "(net.dst.ip == ${origin.ip} and net.dst.port in {${origin.ports}})"])
+  workstation_exclusions = [
+    { address = local.topology.iot.cidr, description = "IoT gateway local LAN" },
+    { address = "${local.topology.office.gateway}/32", description = "Lab office hypervisor management" },
+    { address = "${local.topology.home.gateway}/32", description = "Lab home hypervisor management" },
+    { address = "169.254.0.0/16", description = "IPv4 link local" },
+    { address = "224.0.0.0/4", description = "IPv4 multicast" },
+    { address = "255.255.255.255/32", description = "IPv4 broadcast" },
+    { address = "fe80::/10", description = "IPv6 link local" },
+    { address = "ff00::/8", description = "IPv6 multicast" },
+  ]
 }
 
 resource "cloudflare_zero_trust_device_custom_profile" "lab" {
@@ -78,16 +96,27 @@ resource "cloudflare_zero_trust_device_custom_profile" "lab" {
   captive_portal        = 180
 
   # Replace the default broad RFC1918 excludes. Never exclude the resource /32s.
-  exclude = [
-    { address = local.topology.iot.cidr, description = "IoT gateway local LAN" },
-    { address = "${local.topology.office.gateway}/32", description = "Lab office hypervisor management" },
-    { address = "${local.topology.home.gateway}/32", description = "Lab home hypervisor management" },
-    { address = "169.254.0.0/16", description = "IPv4 link local" },
-    { address = "224.0.0.0/4", description = "IPv4 multicast" },
-    { address = "255.255.255.255/32", description = "IPv4 broadcast" },
-    { address = "fe80::/10", description = "IPv6 link local" },
-    { address = "ff00::/8", description = "IPv6 multicast" },
-  ]
+  exclude = local.workstation_exclusions
+}
+
+resource "cloudflare_zero_trust_device_custom_profile" "egress" {
+  account_id            = var.account_id
+  name                  = "cfztna-lab egress gateway"
+  match                 = "identity.service_token_uuid == ${jsonencode(var.gateway_enrollment_token_uuid)}"
+  precedence            = 5
+  enabled               = true
+  service_mode_v2       = { mode = "warp" }
+  tunnel_protocol       = "masque"
+  switch_locked         = true
+  auto_connect          = 30
+  allow_mode_switch     = false
+  allowed_to_leave      = false
+  exclude_office_ips    = false
+  disable_auto_fallback = true
+  captive_portal        = 180
+  exclude = concat(local.workstation_exclusions, [
+    { address = local.topology.resources.cidr, description = "Local file server network on the egress gateway" },
+  ])
 }
 
 resource "cloudflare_zero_trust_device_posture_rule" "managed" {

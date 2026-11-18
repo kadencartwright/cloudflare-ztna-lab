@@ -1,6 +1,6 @@
 ---
 - name: Install the dedicated Gateway root for lab CLI probes
-  hosts: office,remote
+  hosts: office,remote,origin
   gather_facts: false
   become: true
   tasks:
