@@ -63,6 +63,21 @@ sha256sum download"""
     ssh(role, "smb-rw", ["bash", "-c", script], stdin=f"username = labshare\npassword = {password}\n")
 
 
+def private_denied(role):
+    # WARP can acknowledge the client's SYN before Gateway rejects the flow.
+    # SMB authentication errors mean the request reached the server.
+    smb_result = ssh(role, "deny-smb", [
+        "timeout", "12", "smbclient", f"//{ORIGIN}/Work", "-p", "445", "-N", "-c", "ls",
+    ], allowed=(1, 124))
+    if smb_result.returncode != 124 and not re.search(
+        r"NT_STATUS_(CONNECTION_RESET|CONNECTION_DISCONNECTED|CONNECTION_REFUSED|HOST_UNREACHABLE|NETWORK_UNREACHABLE|IO_TIMEOUT)\b",
+        smb_result.stderr + smb_result.stdout,
+    ):
+        raise RuntimeError(f"{role} SMB denial did not produce a transport failure.")
+    # Any HTTP response from the IPP listener means the request reached it.
+    ssh(role, "deny-ipp", f"{CURL} -o /dev/null http://{ORIGIN}:631/ipp/print", allowed=(7, 28, 52, 56))
+
+
 def pdf_document(text):
     content = f"BT /F1 12 Tf 50 100 Td ({text}) Tj ET\n".encode()
     objects = [
@@ -199,11 +214,13 @@ def device_policy(scenario):
         warp_ready(role)
         https(role)
         check_route(role, "private-route")
-        for port in PORTS:
-            private_socket(role, port, scenario == "allow", scenario)
         if scenario == "allow":
+            for port in PORTS:
+                private_socket(role, port, True, "allow")
             smb(role)
             printer(role)
+        else:
+            private_denied(role)
 
 
 def overlap():
