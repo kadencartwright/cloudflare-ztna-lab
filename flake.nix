@@ -18,7 +18,7 @@
 
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
-          opentofu ansible libvirt qemu just python3 jq curl openssh cdrtools libxslt shellcheck nixfmt go
+          opentofu ansible libvirt qemu just python3 jq curl openssh cdrtools libxslt shellcheck nixfmt go nodejs_24
         ];
       };
     };

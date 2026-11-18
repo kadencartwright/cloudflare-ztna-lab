@@ -31,13 +31,12 @@ prepare_local() {
   python3 tools/inventory.py render
 }
 
-cloud_guard() {
+cloud_account_guard() {
   local account="${TF_VAR_account_id:-}"
   if [[ ! $account =~ ^[0-9a-f]{32}$ ||
         ( ${TF_VAR_dedicated_lab_account_confirmation:-} != "dedicated-lab:$account" &&
-          ${TF_VAR_dedicated_lab_account_confirmation:-} != "approved-poc:$account" ) ||
-        -z ${CLOUDFLARE_API_TOKEN:-} ]]; then
-    echo 'Set the lab account ID, its dedicated-lab or approved-poc confirmation, and a lab-scoped CLOUDFLARE_API_TOKEN.' >&2
+          ${TF_VAR_dedicated_lab_account_confirmation:-} != "approved-poc:$account" ) ]]; then
+    echo 'Confirm the lab account with dedicated-lab:<account_id> or approved-poc:<account_id>.' >&2
     exit 1
   fi
   if [[ -f .lab/cloud-account ]] && [[ $(<.lab/cloud-account) != "$account" ]]; then
@@ -52,7 +51,29 @@ cloud_guard() {
       exit 1
     fi
   fi
-  printf '%s\n' "$account" > .lab/cloud-account
+}
+
+cloud_guard() {
+  set +x
+  if [[ -z ${CLOUDFLARE_API_TOKEN:-} && -f .lab/cloud-auth.json ]]; then
+    local credentials
+    local -a fields
+    credentials=$(python3 -m tools.cloud_auth load)
+    mapfile -t fields <<< "$credentials"
+    if [[ ${TF_VAR_account_id:-${fields[0]}} != "${fields[0]}" ||
+          ${TF_VAR_dedicated_lab_account_confirmation:-${fields[1]}} != "${fields[1]}" ]]; then
+      echo 'The requested Cloudflare account or confirmation differs from the saved OAuth credentials.' >&2
+      exit 1
+    fi
+    export TF_VAR_account_id="${fields[0]}" TF_VAR_dedicated_lab_account_confirmation="${fields[1]}"
+    export CLOUDFLARE_API_TOKEN="${fields[2]}"
+  fi
+  if [[ -z ${CLOUDFLARE_API_TOKEN:-} ]]; then
+    echo 'Run just cloud-auth or set a lab-scoped CLOUDFLARE_API_TOKEN.' >&2
+    exit 1
+  fi
+  cloud_account_guard
+  printf '%s\n' "$TF_VAR_account_id" > .lab/cloud-account
   "${cloud_tofu[@]}" init -input=false -lockfile=readonly
 }
 
@@ -84,6 +105,19 @@ case "${1:-}" in
     "${local_tofu[@]}" destroy -var-file="$PWD/.lab/local.tfvars.json"
     if [[ -f .lab/known_hosts ]]; then rm .lab/known_hosts; fi
     ;;
+  cloud-auth)
+    confirmation="${2:-}"
+    if [[ -n ${TF_VAR_account_id:-} && $TF_VAR_account_id != "${confirmation#*:}" ]]; then
+      echo 'The OAuth account differs from TF_VAR_account_id.' >&2
+      exit 1
+    fi
+    export TF_VAR_account_id="${confirmation#*:}"
+    export TF_VAR_dedicated_lab_account_confirmation="$confirmation"
+    cloud_account_guard
+    shift 2
+    python3 -m tools.cloud_auth authorize "$@"
+    printf '%s\n' "$TF_VAR_account_id" > .lab/cloud-account
+    ;;
   cloud-plan|cloud-destroy)
     cloud_guard
     if [[ $1 = cloud-plan ]]; then
@@ -104,7 +138,7 @@ case "${1:-}" in
     ansible-playbook -i .lab/inventory.ini ansible/connector.yml
     ;;
   *)
-    echo 'Usage: tools/lab {plan|up|configure|ssh|down|cloud-plan|cloud-apply|cloud-destroy|connector}' >&2
+    echo 'Usage: tools/lab {plan|up|configure|ssh|down|cloud-auth|cloud-plan|cloud-apply|cloud-destroy|connector}' >&2
     exit 2
     ;;
 esac

@@ -24,6 +24,9 @@ test:
 test-cloud scenario="allow":
     python3 tests/integration.py "$1"
 
+cloud-auth confirmation *options:
+    ./tools/lab cloud-auth "$@"
+
 cloud-plan:
     ./tools/lab cloud-plan
 

@@ -88,22 +88,28 @@ When upgrading a checkout that provisioned the earlier headless office image, re
 
 ## Dedicated Cloudflare setup
 
-1. Create a new dedicated Cloudflare Zero Trust account and team. Create one Cloudflare Access service token per WARP endpoint: office, remote, Windows 11 and IoT gateway. Add those tokens to the device enrollment policy with the Service Auth action. Keep the client IDs and secrets in an external secret store. [Service Auth enrollment](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/device-enrollment/) In **Traffic policies > Traffic settings**, enable Secure Web Gateway TCP and UDP proxying, TLS decryption and activity logging. Record the prior settings and download the active Gateway root. These account-wide controls are manual so the IaC does not own or overwrite an account-wide settings resource.
-2. Create a token scoped to the dedicated account with read/write permissions for Cloudflare Tunnel, Cloudflare One Networks, and Zero Trust settings and policy. Set the token from an external secret store. The wrapper binds the checkout and saved plan to the account ID. Never point it at a customer or production account.
+1. Create a dedicated Cloudflare account and initialize its Zero Trust team. Run the authentication command from the lab checkout, substituting the account ID from the dashboard.
+
+   ```sh
+   just cloud-auth 'dedicated-lab:<account-id>'
+   ```
+
+   Replace the placeholder before running the command. Open the printed Cloudflare sign-in link on any machine and approve it while the command is running. Sign in as a Super Administrator or as a member with API Token Provisioning and the requested product permissions on that account. Use the pinned Nix dev shell for Node.js and npm. Outside Nix, use Node.js 24.22 or newer on the 24.x line. [Cloudflare CLI device sign-in](https://developers.cloudflare.com/cf/get-started/) · [Account API token creation roles](https://developers.cloudflare.com/changelog/post/2026-10-01-account-api-token-provisioning/)
+
+   The single consent requests account identity and token provisioning, plus read and write for Zero Trust (Gateway, WARP profiles, and posture), Cloudflare Tunnel, Cloudflare One Networks, Access Apps and Policies, and Access Service Tokens. The resulting token has those product groups for the confirmed account only. The command checks the issued policy and probes the relevant APIs before saving it to the ignored, mode-0600 `.lab/cloud-auth.json`. `just cloud-plan`, `just cloud-apply`, and `just cloud-destroy` use it automatically. Rerunning authentication verifies the saved token. Add `--rotate` to run OAuth again and replace the local credential, then revoke the previous Cloudflare token once it is out of use.
+
+   An externally managed token still works. Export `CLOUDFLARE_API_TOKEN`, `TF_VAR_account_id`, and `TF_VAR_dedicated_lab_account_confirmation` (for example, `dedicated-lab:$TF_VAR_account_id`). The external token takes priority when set. For a personal account explicitly approved for lab reuse, use `approved-poc:<account-id>` and review existing policies and routes before changing account-wide settings. Keep billing outside the lab setup.
+
+2. Create one Cloudflare Access service token per WARP endpoint: office, remote, Windows 11 and IoT gateway. Add the tokens to the device enrollment policy with the Service Auth action. Keep the client IDs and secrets in an external secret store. In **Traffic policies > Traffic settings**, enable Secure Web Gateway TCP and UDP proxying, TLS decryption and activity logging. Record the prior settings and download the active Gateway root. These account-wide settings are configured separately from OAuth and OpenTofu. [Service Auth enrollment](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/device-enrollment/)
 
    ```sh
    cp iac/cloud/lab.tfvars.example iac/cloud/lab.tfvars
    # Set team_name and enrollment_token_uuids in iac/cloud/lab.tfvars.
    # Use the Access token resource UUIDs. Keep the client secrets outside IaC.
-   export TF_VAR_account_id='<dedicated-lab-account-id>'
-   export TF_VAR_dedicated_lab_account_confirmation="dedicated-lab:$TF_VAR_account_id"
-   # Load CLOUDFLARE_API_TOKEN from your secret store.
    just cloud-plan
    # Review the account, rules and /32 routes in the plan.
    just cloud-apply
    ```
-
-   For a personal account explicitly approved for lab reuse, back up the existing Zero Trust settings and review any active users, routes, and policies before changing account-wide traffic settings. Use `approved-poc:$TF_VAR_account_id` for the confirmation on that account. Keep billing outside the lab setup.
 
 3. Retrieve the newly created `cfztna-lab` remotely managed Tunnel's connector secret in the dedicated dashboard. Set `CFZTNA_TUNNEL_TOKEN` from your secret store and run `just connector`. Verify `just ssh connector 'curl -fsS http://127.0.0.1:20241/ready'` and Tunnel health in the dashboard. Systemd passes the secret to cloudflared from a root-only credential file. The token is outside OpenTofu state.
 4. Independently verify the downloaded CA fingerprint against the lab account, then run `just trust-ca /path/to/lab-gateway.pem`. That makes the root available to the Linux CLI probes and the office Firefox policy. Restart Firefox after changing the root. Configure other NixOS applications' trust independently, or add the verified root via `security.pki.certificateFiles` and rebuild the clients. For Windows use the guest's Local Computer trusted root store or Cloudflare's certificate deployment. Leave host trust untouched. TLS-pinned applications and private browser/runtime stores need individual evaluation.
