@@ -4,20 +4,21 @@ A disposable, single-host KVM lab for a 50-person hybrid organization. Employee 
 
 ```mermaid
 flowchart LR
-  O[GNOME office or Windows 11] --> ON[Office employee NAT]
-  R[NixOS home or Windows 11] --> HN[Home NAT]
+  O["GNOME office or Windows 11<br/>WARP runs here"] --> ON[Office employee NAT]
+  R["NixOS home or Windows 11<br/>WARP runs here"] --> HN[Home NAT]
   I[IoT devices] --> IL[Isolated IoT LAN]
   IL -->|Public IPv4 and DNS only| IG[NixOS IoT gateway running WARP]
   IG -->|Office-facing NIC| ON
-  ON -->|WARP| E[Cloudflare Gateway and Tunnel edge]
-  HN -->|WARP| E
+  ON -->|Encrypted WARP and cloudflared traffic| E[Cloudflare Gateway and Tunnel edge]
+  HN -->|Encrypted WARP traffic| E
   E --> W[Public DNS and HTTPS]
-  C["Cloudflare Tunnel Connector (NixOS)"] -->|Outbound Cloudflare Tunnel for private SMB and IPP| E
-  C --- ON
+  C["Cloudflare Tunnel Connector (NixOS)"] -->|Outbound cloudflared connection| ON
   C -->|Second NIC| V[Isolated resource segment]
   V --> L[NixOS Samba and IPP]
   V --> S[Windows Server SMB]
 ```
+
+The workstations and IoT gateway encrypt traffic on-device before it reaches NAT. The office NAT also carries the connector's separate outbound `cloudflared` connection. Cloudflare Gateway evaluates employee requests, and authorized private SMB and IPP traffic reaches the resource segment through that connector. [Cloudflare connectivity options](https://developers.cloudflare.com/cloudflare-one/networks/connectivity-options/)
 
 | Segment | Addresses | Function |
 | --- | --- | --- |
