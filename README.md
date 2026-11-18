@@ -78,6 +78,8 @@ Run `just console-down` to remove the console containers and stop the relay. Kee
 
 Open **Office desktop (VNC)** and select **Lab Employee** at the GNOME login screen. The local username is `employee` and `just configure` stores its generated password in `.lab/office-desktop-password` on the host. The employee account has no administrative rights. Use **office (SSH)** for the network diagnostics menu.
 
+The office login screen and desktop ignore Caps Lock events from the console. Use Shift for uppercase when typing the password.
+
 The desktop includes Firefox, LibreOffice Writer, Calc and Impress, GNOME Files and PDF tools, and CUPS printing. Firefox uses the verified Gateway CA installed by `just trust-ca`. On an enrolled office workstation, open `smb://192.168.250.10/Work` in Files and authenticate as `labshare` with the generated SMB password. To add the virtual printer by its IPP URL, run this from the lab host with WARP connected.
 
 ```sh

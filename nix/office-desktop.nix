@@ -1,4 +1,9 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
+let
+  consoleKeyboard = {
+    settings."org/gnome/desktop/input-sources".xkb-options = [ "caps:none" ];
+  };
+in
 {
   services.xserver.enable = true;
   services.displayManager.gdm.enable = true;
@@ -10,6 +15,12 @@
   services.gnome.gnome-remote-desktop.enable = false;
   services.gvfs.enable = true;
   services.printing.enable = true;
+
+  # QEMU's VNC keysym handling can send Caps Lock events during mixed-case input.
+  programs.dconf.profiles = {
+    gdm.databases = lib.mkBefore [ consoleKeyboard ];
+    user.databases = lib.mkBefore [ consoleKeyboard ];
+  };
 
   users.users.employee = {
     isNormalUser = true;
