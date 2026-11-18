@@ -1,15 +1,18 @@
 # Cloudflare Zero Trust SMB lab
 
-A disposable, single-host KVM lab for a 50-person hybrid organization. Use one Cloudflare One Client per employee endpoint for public HTTPS inspection and private SMB and IPP. The same Gateway policy applies from office and home. NixOS provides two endpoints, a connector, Samba, and a CUPS IPP Everywhere test printer. Add a movable Windows 11 client and a Windows Server 2025 file server to the same lab.
+A disposable, single-host KVM lab for a 50-person hybrid organization. Employee devices use Cloudflare One Client for public HTTPS inspection and private SMB and IPP from office and home. NixOS provides two workstations, a Tunnel connector, a Samba share, a CUPS IPP Everywhere test printer, and a gateway that gives clientless IoT devices inspected Internet access. The lab also supports a movable Windows 11 client and a Windows Server 2025 file server.
 
 ```mermaid
 flowchart LR
   O[NixOS office or Windows 11] --> ON[Office employee NAT]
   R[NixOS home or Windows 11] --> HN[Home NAT]
-  ON --> E[Cloudflare Gateway and Tunnel edge]
-  HN --> E
+  I[IoT devices] --> IL[Isolated IoT LAN]
+  IL -->|Public IPv4 and DNS only| IG[NixOS IoT gateway running WARP]
+  IG -->|Office-facing NIC| ON
+  ON -->|WARP| E[Cloudflare Gateway and Tunnel edge]
+  HN -->|WARP| E
   E --> W[Public DNS and HTTPS]
-  C[NixOS connector] -->|Outbound cloudflared| E
+  C[NixOS connector] -->|Outbound Tunnel for private SMB and IPP| E
   C --- ON
   C -->|Second NIC| V[Isolated resource segment]
   V --> L[NixOS Samba and IPP]
@@ -18,12 +21,15 @@ flowchart LR
 
 | Segment | Addresses | Function |
 | --- | --- | --- |
-| Office employees | 192.168.246.0/24, gateway .1, office .10, connector .20 | Office and connector egress |
+| Office employees | 192.168.246.0/24, gateway .1, office .10, connector .20, IoT gateway uplink .30 | Office, connector, and IoT gateway egress |
 | Home | 192.168.247.0/24, gateway .1, remote .10 | Independent remote egress |
+| IoT LAN | 192.168.249.0/24, gateway and DNS .1, DHCP .100–.199 | Isolated switch with DHCP and WARP egress supplied by the IoT gateway |
 | Office resources | 192.168.250.0/24, connector .2, NixOS origin .10, Windows Server .30 | Unnumbered switch on the hypervisor |
 | Windows 11 | DHCP .100–.199 on either NAT network | Move one enrolled client between sites |
 
 Separate libvirt switches model office employee and resource VLAN broadcast domains without an 802.1Q trunk. The lightweight Linux connector replaces a firewall appliance. Its nftables rules drop employee-to-resource forwarding and permit resource-initiated DNS to the office gateway and public TCP 80/443 for updates. The origins accept service traffic only from the connector's resource IP. Resource SSH uses a jump through the connector and a lab-only key. Cloudflare Tunnel makes outbound connections and advertises each enabled origin as a /32. The home switch has no interface on the resource segment.
+
+The IoT gateway has one interface on the IoT switch and one on the office uplink. It forwards public traffic through its own WARP registration and blocks IoT devices from reaching office and private resource addresses. [IoT setup and tests](#iot-egress-through-cloudflare-gateway)
 
 ## Host setup
 
@@ -41,6 +47,8 @@ just configure      # wait for cloud-init and provision the Samba login
 just test           # encrypted SMB, actual IPP Print-Job, and no direct private path
 just ssh origin 'sudo systemctl status lab-printer --no-pager'
 ```
+
+For a handoff to a new host and account, start from a fresh clone. The bring-up commands generate local state and SSH credentials on that host. Run `just test` before enrolling WARP, then use the new lab account's credentials and CA for Cloudflare setup.
 
 [Local OpenTofu](iac/local/main.tf) manages libvirt. Cloud-init injects the SSH key created in `.lab/`. The inventory and SSH config are generated from [the address plan](topology.json), with an isolated trust-on-first-use host key file and ProxyJump to the origin. Compare initial fingerprints via the trusted console on a shared host. Ansible sets the disposable SMB account `labshare` from `.lab/smb-password`. This is separate from enrollment identity. Changing a role image or cloud-init seed replaces that VM. Keep any data you need outside the disposable guest disk. Tests write command results, network routes, transfer hashes and IPP job IDs under `.lab/proof/`. Treat logs and state as private.
 
@@ -94,9 +102,11 @@ Run the first four with the managed marker present on both Linux workstations. E
 
 The overlap test adds a competing on-link resource /24 to the home client and checks that the WARP path continues to carry SMB. The connector outage stops only the tunnel and checks private failure with working public HTTPS. The fail-closed test stops WARP, tries direct public DNS and HTTPS using an independently resolved IP, verifies nftables drop counters and checks recovery. Live cases exit 77 until explicitly enabled. Local results establish service delivery and isolation before enrollment.
 
+`just test-cloud` runs the Linux workstation checks. Use the [Windows runbook](windows/README.md) and the [IoT checks below](#iot-egress-through-cloudflare-gateway) to verify those paths on each new deployment.
+
 ## Windows guests
 
-Follow [the Windows VM and test runbook](windows/README.md) to attach Windows 11 and Windows Server 2025, configure the second encrypted SMB share, enroll the supported client, and move it between office and home. Enable the Windows /32 route in cloud variables after the server setup and firewall checks.
+Follow [the Windows VM and test runbook](windows/README.md) to attach Windows 11 and Windows Server 2025, configure the second encrypted SMB share, enroll the client, and move it between office and home. Enable the Windows /32 route in cloud variables after the server setup and firewall checks. Live lab verification covered inspected HTTPS and encrypted read/write against both shares from the same Windows 11 registration on both networks. The home client also submitted a native IPP job that CUPS stored as a PDF.
 
 ## Recovery and teardown
 
@@ -111,7 +121,7 @@ The lab covers IPv4 policy and failure paths for representative endpoints. It ca
 
 ## IoT egress through Cloudflare Gateway
 
-The NixOS `iot-gateway` VM is a transparent IPv4 router for clientless lab devices. It uses one enrolled Cloudflare One Client connection and does not require a Cloudflare WAN (Magic WAN) tunnel. Forwarding through the Linux WARP client is a lab design and must be verified against the client version and account. The existing [Cloudflare One Client Traffic and DNS mode](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/route-traffic/client-architecture/) supplies the tunnel and DNS proxy.
+The NixOS `iot-gateway` VM is a transparent IPv4 router for clientless lab devices. One enrolled Cloudflare One Client in Traffic and DNS mode supplies the tunnel and DNS proxy. Live lab checks verified DNS resolution, the inspected HTTPS canary, and blocked access to private addresses from an IoT-only client. Repeat the checks on the recipient's account and client version. [Cloudflare One Client traffic routing](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/route-traffic/client-architecture/)
 
 - **IoT LAN:** Attach client NICs only to the isolated `cfztna-iot` libvirt network. The gateway supplies DHCP leases at `192.168.249.100–199`, router and DNS at `192.168.249.1`, and MTU 1280. A client with a static address needs the same gateway, DNS server and MTU.
 - **Uplink:** The gateway uses `192.168.246.30` on the office NAT for enrollment and WARP transport. On this host use `just ssh iot-gateway` for administration. IoT endpoints never join the office NAT.
@@ -122,6 +132,6 @@ Use `just up` to bring up the IoT gateway. Apply the scoped Cloudflare profile i
 
 From an IoT-only guest check a DHCP lease, run `dig @192.168.249.1 example.com`, and make an HTTPS request. Verify the DNS and HTTPS activity in Gateway under the gateway identity. If TLS decryption is enabled, use a verified Gateway CA on the test device and test the existing same-host HTTPS path canary. Stop `cloudflare-warp` on the gateway and retry DNS and a direct-IP HTTPS request to confirm failure. Restart it and confirm recovery. Check that `192.168.246.1`, SMB and IPP resource addresses remain unreachable from the IoT client throughout.
 
-For the disconnected smoke test on the lab host, run `sudo tests/iot-local.sh` with BusyBox, netcat and dig installed. It creates a temporary network namespace on the lab IoT bridge, checks DHCP and verifies that public, office and resource traffic cannot escape without WARP.
+For the disconnected smoke test on the lab host, run `sudo tests/iot-local.sh` with BusyBox, netcat and dig installed while the gateway is unenrolled or WARP is stopped. It creates a temporary network namespace on the lab IoT bridge, checks DHCP and verifies that public, office and resource traffic cannot escape without WARP. Restart the gateway's WARP service after the test if you stopped it.
 
 For physical devices, connect their dedicated VLAN or access ports to the gateway's IoT-side bridge via a dedicated NIC or VLAN subinterface. Keep that L2 network separate from the office uplink and remove any other gateway, DHCP server or IPv6 router advertisements on it before onboarding devices. The default deployment connects only the virtual IoT switch.
