@@ -1,0 +1,54 @@
+---
+- name: Stage unattended WARP registration on one Linux lab device
+  hosts: office,remote,iot-gateway
+  gather_facts: false
+  become: true
+  vars:
+    warp_team: "{{ lookup('ansible.builtin.env', 'CFZTNA_WARP_TEAM') }}"
+    warp_client_id: "{{ lookup('ansible.builtin.env', 'CFZTNA_WARP_CLIENT_ID') }}"
+    warp_client_secret: "{{ lookup('ansible.builtin.env', 'CFZTNA_WARP_CLIENT_SECRET') }}"
+  pre_tasks:
+    - name: Require a single endpoint and runtime enrollment credentials
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - warp_team is match('^[a-z0-9][a-z0-9-]*$')
+          - warp_client_id is match('^[a-zA-Z0-9._-]+$')
+          - warp_client_secret is match('^[a-zA-Z0-9._-]+$')
+        fail_msg: Select one Linux endpoint and supply its Cloudflare service-token configuration through the environment.
+      no_log: true
+  tasks:
+    - name: Stage the managed-workstation marker
+      ansible.builtin.file:
+        path: /etc/cfztna-managed
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+        access_time: preserve
+        modification_time: preserve
+      when: inventory_hostname in ['office', 'remote']
+
+    - name: Install the root-only WARP configuration
+      ansible.builtin.copy:
+        dest: /var/lib/cloudflare-warp/mdm.xml
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          <dict>
+            <key>organization</key><string>{{ warp_team }}</string>
+            <key>auth_client_id</key><string>{{ warp_client_id }}</string>
+            <key>auth_client_secret</key><string>{{ warp_client_secret }}</string>
+            <key>onboarding</key><false/>
+            <key>auto_connect</key><integer>1</integer>
+            <key>switch_locked</key><true/>
+          </dict>
+      no_log: true
+      diff: false
+      register: warp_configuration
+
+    - name: Start WARP with the enrollment configuration
+      ansible.builtin.systemd_service:
+        name: cloudflare-warp
+        state: "{{ 'restarted' if warp_configuration.changed else 'started' }}"

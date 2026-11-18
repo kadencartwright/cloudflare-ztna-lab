@@ -24,19 +24,21 @@ variable "dedicated_lab_account_confirmation" {
   }
 }
 
-variable "allow_email" {
+variable "team_name" {
   type = string
   validation {
-    condition     = can(regex("^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", var.allow_email))
-    error_message = "Use a lowercase mailbox for the authorized test identity."
+    condition     = can(regex("^[a-z0-9][a-z0-9-]*$", var.team_name))
+    error_message = "Enter the dedicated Zero Trust team name."
   }
 }
 
-variable "deny_email" {
-  type = string
+variable "enrollment_token_uuids" {
+  type = set(string)
   validation {
-    condition     = var.deny_email != var.allow_email && can(regex("^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", var.deny_email))
-    error_message = "Use a distinct lowercase mailbox for the denied test identity."
+    condition = length(var.enrollment_token_uuids) > 0 && alltrue([
+      for id in var.enrollment_token_uuids : can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", id))
+    ])
+    error_message = "Enter service token resource UUIDs, not client IDs or secrets."
   }
 }
 
@@ -51,8 +53,10 @@ locals {
     { nixos = { ip = local.topology.machines.origin.ip, ports = "445 631" } },
     var.expose_windows_server ? { windows = { ip = local.topology.windows_server_ip, ports = "445" } } : {}
   )
-  lab_identity  = "identity.email in {${jsonencode(var.allow_email)} ${jsonencode(var.deny_email)}}"
-  lab_allow     = "identity.email == ${jsonencode(var.allow_email)}"
+  service_identity = "identity.email == ${jsonencode("non_identity@${var.team_name}.cloudflareaccess.com")}"
+  enrollment_match = join(" or ", [
+    for id in sort(tolist(var.enrollment_token_uuids)) : "identity.service_token_uuid == ${jsonencode(id)}"
+  ])
   destinations  = join(" ", [for origin in local.origins : origin.ip])
   private_ports = join(" or ", [for origin in local.origins : "(net.dst.ip == ${origin.ip} and net.dst.port in {${origin.ports}})"])
 }
@@ -60,7 +64,7 @@ locals {
 resource "cloudflare_zero_trust_device_custom_profile" "lab" {
   account_id            = var.account_id
   name                  = "cfztna-lab"
-  match                 = local.lab_identity
+  match                 = local.enrollment_match
   precedence            = 10
   enabled               = true
   service_mode_v2       = { mode = "warp" }
@@ -116,13 +120,13 @@ resource "cloudflare_zero_trust_gateway_policy" "private_deny" {
 
 resource "cloudflare_zero_trust_gateway_policy" "private_allow" {
   account_id     = var.account_id
-  name           = "cfztna-lab allow managed employee to SMB and IPP"
+  name           = "cfztna-lab allow managed device to SMB and IPP"
   enabled        = true
   precedence     = 1000
   action         = "allow"
   filters        = ["l4"]
   traffic        = "net.protocol == \"tcp\" and (${local.private_ports})"
-  identity       = local.lab_allow
+  identity       = local.service_identity
   device_posture = "any(device_posture.checks.passed[*] in {${join(" ", [for rule in cloudflare_zero_trust_device_posture_rule.managed : jsonencode(rule.id)])}})"
   depends_on     = [cloudflare_zero_trust_gateway_policy.private_deny]
 }
@@ -134,7 +138,7 @@ resource "cloudflare_zero_trust_gateway_policy" "dns_canary" {
   precedence = 3000
   action     = "block"
   filters    = ["dns"]
-  identity   = local.lab_identity
+  identity   = local.service_identity
   traffic    = "dns.fqdn == \"example.net\""
 }
 
@@ -145,7 +149,7 @@ resource "cloudflare_zero_trust_gateway_policy" "https_canary" {
   precedence = 4000
   action     = "block"
   filters    = ["http"]
-  identity   = local.lab_identity
+  identity   = local.service_identity
   traffic    = "http.request.host == \"example.com\" and http.request.uri.path == \"/cfztna-lab-block\""
   rule_settings = {
     block_page_enabled = true

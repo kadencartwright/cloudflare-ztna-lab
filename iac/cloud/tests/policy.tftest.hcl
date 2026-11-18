@@ -1,10 +1,10 @@
 mock_provider "cloudflare" {}
 
 variables {
+  team_name                          = "example-lab"
+  enrollment_token_uuids             = ["00000000-0000-0000-0000-000000000001"]
   account_id                         = "00000000000000000000000000000000"
   dedicated_lab_account_confirmation = "dedicated-lab:00000000000000000000000000000000"
-  allow_email                        = "employee@example.org"
-  deny_email                         = "visitor@example.org"
 }
 
 run "scoped_default" {

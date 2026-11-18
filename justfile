@@ -50,3 +50,6 @@ check:
 
 trust-ca pem-file:
     CFZTNA_GATEWAY_CA="$(realpath "$1")" ansible-playbook -i .lab/inventory.ini ansible/trust-ca.yml
+
+enroll-warp host:
+    ansible-playbook -i .lab/inventory.ini ansible/enroll-warp.yml --limit "$1"

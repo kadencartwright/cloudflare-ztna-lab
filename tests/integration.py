@@ -173,7 +173,7 @@ def check_route(role, label):
         raise RuntimeError(f"{role} hypervisor management address was not excluded.")
 
 
-def identity(scenario):
+def device_policy(scenario):
     ssh("connector", "tunnel-ready", "curl --fail --silent --show-error http://127.0.0.1:20241/ready")
     for port in PORTS:
         private_socket("connector", port, True, "origin-listener")
@@ -250,14 +250,14 @@ def fail_closed():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=("local", "allow", "deny-identity", "deny-posture", "overlap", "outage", "fail-closed"))
+    parser.add_argument("scenario", choices=("local", "allow", "deny-posture", "overlap", "outage", "fail-closed"))
     args = parser.parse_args()
     if args.scenario != "local" and os.environ.get("CFZTNA_LIVE") != "1":
         print("SKIP: dedicated Cloudflare lab and prepared registrations required; set CFZTNA_LIVE=1.")
         return 77
     print(f"Proof directory: {ARTIFACTS}", flush=True)
-    if args.scenario in {"allow", "deny-identity", "deny-posture"}:
-        identity(args.scenario)
+    if args.scenario in {"allow", "deny-posture"}:
+        device_policy(args.scenario)
     else:
         {"local": local, "overlap": overlap, "outage": outage, "fail-closed": fail_closed}[args.scenario]()
     print(f"PASS: {args.scenario}")
