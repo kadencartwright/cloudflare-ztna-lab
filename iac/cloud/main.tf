@@ -19,8 +19,8 @@ variable "account_id" {
 variable "dedicated_lab_account_confirmation" {
   type = string
   validation {
-    condition     = var.dedicated_lab_account_confirmation == "dedicated-lab:${var.account_id}"
-    error_message = "Confirm the dedicated lab account with dedicated-lab:<account_id>."
+    condition     = contains(["dedicated-lab:${var.account_id}", "approved-poc:${var.account_id}"], var.dedicated_lab_account_confirmation)
+    error_message = "Confirm the account with dedicated-lab:<account_id> or approved-poc:<account_id>."
   }
 }
 
@@ -99,7 +99,7 @@ resource "cloudflare_zero_trust_device_posture_rule" "managed" {
   name       = "cfztna-lab marker (${each.key})"
   type       = "file"
   schedule   = "1m"
-  expiration = "5m"
+  expiration = "25m"
   match      = [{ platform = each.key }]
   input = {
     operating_system = each.key

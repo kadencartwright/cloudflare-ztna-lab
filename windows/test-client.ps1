@@ -13,8 +13,13 @@ try {
     if ($Expected -ne 'pre-warp') {
         & curl.exe --noproxy '*' --max-time 15 -fsS https://example.com/ | Out-Null
         if ($LASTEXITCODE) { throw 'Control request failed TLS verification or HTTP.' }
-        $blocked = & curl.exe --noproxy '*' --max-time 15 -sS -o NUL -w '%{http_code}' https://example.com/cfztna-lab-block
-        if ($LASTEXITCODE -or $blocked -ne '403') { throw "Expected HTTP 403 for the encrypted canary path, got $blocked" }
+        $blockHeaders = & curl.exe --noproxy '*' --http1.1 --max-time 15 -sS -o NUL -D - https://example.com/cfztna-lab-block
+        if ($LASTEXITCODE) { throw 'HTTPS canary request failed.' }
+        $blocked = ($blockHeaders | Select-String '^HTTP/1\.1 (\d{3})\b').Matches.Groups[1].Value
+        $gatewayRedirect = $blockHeaders -match '^Location: https://blocked\.teams\.cloudflare\.com/\?[^\r\n]*[?&]block_reason=cfztna-lab\+HTTPS\+path\+canary(?:&|$)'
+        if ($blocked -ne '403' -and ($blocked -ne '302' -or -not $gatewayRedirect)) {
+            throw "Expected the Gateway block response for the encrypted canary path, got $blocked"
+        }
         Write-Output "HTTPS canary status $blocked with trusted TLS"
     }
     Find-NetRoute -RemoteIPAddress $ip | Format-Table

@@ -99,8 +99,9 @@ def check_plan():
     variables = plan["variables"]
     if variables["account_id"]["value"] != account:
         sys.exit("Saved plan account does not match the confirmed account ID.")
-    if variables["dedicated_lab_account_confirmation"]["value"] != f"dedicated-lab:{account}":
-        sys.exit("Saved plan lacks the dedicated account confirmation.")
+    confirmation = os.environ["TF_VAR_dedicated_lab_account_confirmation"]
+    if variables["dedicated_lab_account_confirmation"]["value"] != confirmation:
+        sys.exit("Saved plan confirmation differs from the active account confirmation.")
 
 
 if __name__ == "__main__":

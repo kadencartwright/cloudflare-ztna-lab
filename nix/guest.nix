@@ -224,6 +224,9 @@ in {
   };
 
   services.resolved.enable = true;
+  # WARP writes resolv.conf directly on these guests. nss-resolve otherwise
+  # bypasses its DNS proxy and breaks the local WARP connectivity check.
+  system.nssDatabases.hosts = lib.mkIf (isClient || isIoT) (lib.mkForce [ "files" "myhostname" "dns" ]);
   services.cloudflare-warp = lib.mkIf (isClient || isIoT) {
     enable = true;
     openFirewall = false;

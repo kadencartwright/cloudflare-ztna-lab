@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import sys
 import time
+from urllib.parse import parse_qs, urlsplit
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,7 +108,17 @@ cat > print.test <<'IPP'
   EXPECT job-id OF-TYPE integer
 }}
 IPP
-ipptool -tv ipp://{ORIGIN}:631/ipp/print print.test"""
+# The emulator accepts one job at a time. Only retry an explicit busy response.
+for attempt in {{1..12}}; do
+  if ipptool -tv -T 10 ipp://{ORIGIN}:631/ipp/print print.test > result 2>&1; then
+    cat result
+    exit 0
+  fi
+  cat result
+  grep -q 'status-code = server-error-busy' result || exit 1
+  sleep 2
+done
+exit 1"""
     ssh(role, "ipp-submit", ["bash", "-c", script], stdin=pdf.decode())
     expected = hashlib.sha256(pdf).hexdigest()
     for _ in range(10):
@@ -154,8 +165,15 @@ def https(role):
     if normal.stdout.strip() != "200":
         raise RuntimeError(f"{role} HTTPS control did not return 200.")
     blocked = ssh(role, "https-block", f"{CURL} -i https://example.com/cfztna-lab-block")
-    if not re.search(r"^HTTP/1\.1 403\b", blocked.stdout, re.MULTILINE):
-        raise RuntimeError(f"{role} HTTPS path policy did not return 403.")
+    status = re.match(r"HTTP/1\.1 (\d{3})\b", blocked.stdout)
+    location = re.search(r"^location:\s*([^\r\n]+)", blocked.stdout, re.IGNORECASE | re.MULTILINE)
+    redirect = urlsplit(location[1].strip()) if location else None
+    gateway_block_page = (
+        redirect and redirect.scheme == "https" and redirect.hostname == "blocked.teams.cloudflare.com"
+        and parse_qs(redirect.query).get("block_reason") == ["cfztna-lab HTTPS path canary"]
+    )
+    if not status or not (status[1] == "403" or (status[1] == "302" and gateway_block_page)):
+        raise RuntimeError(f"{role} HTTPS path policy did not return the expected Gateway block response.")
     # Verify the intercepted peer against only the supplied Gateway root.
     ssh(role, "gateway-ca", ["bash", "-o", "pipefail", "-c", f"{CURL} --cacert /etc/cfztna/gateway-ca.pem --fail -o /dev/null -w '%{{certs}}' https://example.com/ | grep -E '^(Subject|Issuer):'"])
     dns = ssh(role, "dns-canary", "dig +tries=1 +time=5 +noall +comments +answer example.net A")

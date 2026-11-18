@@ -34,9 +34,10 @@ prepare_local() {
 cloud_guard() {
   local account="${TF_VAR_account_id:-}"
   if [[ ! $account =~ ^[0-9a-f]{32}$ ||
-        ${TF_VAR_dedicated_lab_account_confirmation:-} != "dedicated-lab:$account" ||
+        ( ${TF_VAR_dedicated_lab_account_confirmation:-} != "dedicated-lab:$account" &&
+          ${TF_VAR_dedicated_lab_account_confirmation:-} != "approved-poc:$account" ) ||
         -z ${CLOUDFLARE_API_TOKEN:-} ]]; then
-    echo 'Set the dedicated lab account ID, its exact confirmation, and a lab-scoped CLOUDFLARE_API_TOKEN.' >&2
+    echo 'Set the lab account ID, its dedicated-lab or approved-poc confirmation, and a lab-scoped CLOUDFLARE_API_TOKEN.' >&2
     exit 1
   fi
   if [[ -f .lab/cloud-account ]] && [[ $(<.lab/cloud-account) != "$account" ]]; then

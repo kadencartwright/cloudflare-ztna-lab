@@ -30,7 +30,8 @@ run "windows_route" {
   command = plan
 
   variables {
-    expose_windows_server = true
+    expose_windows_server              = true
+    dedicated_lab_account_confirmation = "approved-poc:00000000000000000000000000000000"
   }
 
   assert {
